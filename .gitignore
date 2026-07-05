@@ -68,3 +68,5 @@ htmlcov/
 
 # Optuna
 *.db
+
+data/interim/face_frames/
