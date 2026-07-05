@@ -1,0 +1,9 @@
+original_label,source_dataset,canonical_label,keep_drop,reason
+neutral,RAVDESS,neutral,keep,Direct match across RAVDESS and MELD taxonomies.
+calm,RAVDESS,DROPPED,drop,No equivalent class exists in MELD. Merging into neutral would blur a real conceptual distinction (relaxed positive state vs absence of emotion). Dropped per Phase 0 decision to avoid inventing a false label equivalence.
+happy,RAVDESS,happy,keep,Direct match across RAVDESS and MELD taxonomies.
+sad,RAVDESS,sad,keep,Direct match across RAVDESS and MELD taxonomies.
+angry,RAVDESS,angry,keep,Direct match across RAVDESS and MELD taxonomies.
+fearful,RAVDESS,fearful,keep,Direct match across RAVDESS and MELD taxonomies (MELD calls this 'fear').
+disgust,RAVDESS,disgust,keep,Direct match across RAVDESS and MELD taxonomies.
+surprised,RAVDESS,surprised,keep,Direct match across RAVDESS and MELD taxonomies (MELD calls this 'surprise').
