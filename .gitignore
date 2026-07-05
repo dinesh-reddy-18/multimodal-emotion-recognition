@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment variables
+.env
+
+# Data - never commit raw datasets
+data/raw/*
+data/interim/*
+data/processed/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# Model checkpoints
+models/face/*.pt
+models/face/*.pth
+models/audio/*.pt
+models/audio/*.pth
+models/text/*.pt
+models/text/*.pth
+models/fusion/*.pt
+models/fusion/*.pth
+*.ckpt
+*.safetensors
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Node frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Build
+build/
+dist/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Optuna
+*.db
