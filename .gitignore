@@ -70,3 +70,6 @@ htmlcov/
 *.db
 
 data/interim/face_frames/
+
+# Allow CSV index/metadata files (small, valuable - not raw media)
+!data/interim/*.csv
