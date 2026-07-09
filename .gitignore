@@ -73,3 +73,5 @@ data/interim/face_frames/
 
 # Allow CSV index/metadata files (small, valuable - not raw media)
 !data/interim/*.csv
+
+data/interim/audio_wav/
