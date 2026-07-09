@@ -525,3 +525,55 @@ header {
     margin-bottom: 1.25rem;
     color: var(--text-secondary);
 }
+
+/* Live Capture Styles */
+.live-capture-container {
+    margin-top: 1.5rem;
+}
+.divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: var(--text-disabled);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    margin-bottom: 1.5rem;
+}
+.divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border-color);
+}
+.divider:not(:empty)::before {
+    margin-right: .5em;
+}
+.divider:not(:empty)::after {
+    margin-left: .5em;
+}
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+}
+.btn-danger {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    color: var(--text-primary);
+    box-shadow: 0 4px 15px -3px rgba(239, 68, 68, 0.4);
+}
+.btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -3px rgba(239, 68, 68, 0.5);
+    filter: brightness(1.1);
+}
+.recording-status {
+    animation: blinker 1.5s linear infinite;
+    font-weight: 500;
+}
+@keyframes blinker {
+    50% { opacity: 0.4; }
+}
