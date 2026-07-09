@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multimodal Emotion Recognition Showcase</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="background-radial"></div>
+    
+    <div class="app-container">
+        <!-- Sidebar / Navigation Header -->
+        <header>
+            <div class="logo">
+                <i class="fa-solid fa-brain-circuit brain-icon"></i>
+                <h1>Multimodal <span>Emotion AI</span></h1>
+            </div>
+            <div class="status-indicator">
+                <span class="indicator-dot red" id="api-status-dot"></span>
+                <span class="status-text" id="api-status-text">Server Offline</span>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Layout -->
+        <main class="dashboard">
+            <!-- Left Panel: Inputs Panel -->
+            <section class="panel-card inputs-panel-section">
+                <div class="card-header">
+                    <i class="fa-solid fa-sliders header-icon"></i>
+                    <h2>Analysis Modality Inputs</h2>
+                </div>
+                
+                <!-- Tab Switching Navigation -->
+                <div class="tabs-nav">
+                    <button class="tab-btn active" data-tab="video"><i class="fa-solid fa-video"></i> Video</button>
+                    <button class="tab-btn" data-tab="audio"><i class="fa-solid fa-microphone"></i> Audio</button>
+                    <button class="tab-btn" data-tab="text"><i class="fa-solid fa-font"></i> Text</button>
+                </div>
+
+                <div class="tab-content active" id="tab-video">
+                    <div class="upload-container" id="video-upload-area">
+                        <i class="fa-solid fa-file-video upload-icon"></i>
+                        <p class="upload-instructions">Drag and drop your RAVDESS MP4 clip here, or click to browse</p>
+                        <input type="file" id="video-file-input" accept="video/mp4" style="display: none;">
+                        <span class="file-name-display" id="video-name">No file chosen</span>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-audio" style="display: none;">
+                    <div class="upload-container" id="audio-upload-area">
+                        <i class="fa-solid fa-file-audio upload-icon"></i>
+                        <p class="upload-instructions">Drag and drop a speech WAV file here, or click to browse</p>
+                        <input type="file" id="audio-file-input" accept="audio/wav" style="display: none;">
+                        <span class="file-name-display" id="audio-name">No file chosen</span>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="tab-text" style="display: none;">
+                    <div class="text-input-container">
+                        <label for="text-input-field">Enter Statement Text:</label>
+                        <textarea id="text-input-field" placeholder="Type emotion sentence here... (e.g. 'Kids are talking by the door' or 'Dogs are sitting by the door')" rows="4"></textarea>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <button class="btn btn-primary btn-block" id="btn-predict">
+                    <i class="fa-solid fa-chart-line"></i> Predict Modalities & Fusion
+                </button>
+
+                <div class="loader-overlay" id="loader" style="display: none;">
+                    <div class="spinner"></div>
+                    <p id="loader-text">Analyzing signals...</p>
+                </div>
+            </section>
+
+            <!-- Right Panel: Results Dashboard -->
+            <section class="panel-card results-panel-section">
+                <!-- Idle State Message -->
+                <div class="results-idle" id="results-idle-state">
+                    <i class="fa-solid fa-cube floating-cube"></i>
+                    <h3>Awaiting Inputs</h3>
+                    <p>Select inputs on the left panel, and click predict to run the unimodal and fusion emotion networks</p>
+                </div>
+
+                <!-- Active Fused Results -->
+                <div class="results-active" id="results-active-state" style="display: none;">
+                    <div class="card-header">
+                        <i class="fa-solid fa-square-poll-vertical header-icon"></i>
+                        <h2>Prediction Summary</h2>
+                    </div>
+
+                    <!-- Fused Callout -->
+                    <div class="fused-result-banner">
+                        <div class="banner-badge">FUSED PREDICTION</div>
+                        <div class="banner-body">
+                            <h2 id="fused-emotion-label">Happy</h2>
+                            <p>Confidence: <span id="fused-confidence">84.5%</span></p>
+                        </div>
+                    </div>
+
+                    <!-- Breakdown Modality Grid -->
+                    <div class="modality-grid">
+                        <div class="modality-card card-audio" id="card-audio-summary">
+                            <div class="mod-header">
+                                <span><i class="fa-solid fa-microphone"></i> Audio Modality</span>
+                            </div>
+                            <h4 id="audio-prediction-label">Sad</h4>
+                            <small id="audio-prediction-conf">Confidence: 61.2%</small>
+                        </div>
+
+                        <div class="modality-card card-face" id="card-face-summary">
+                            <div class="mod-header">
+                                <span><i class="fa-solid fa-circle-user"></i> Facial Expression</span>
+                            </div>
+                            <h4 id="face-prediction-label">Happy</h4>
+                            <small id="face-prediction-conf">Confidence: 91.5%</small>
+                        </div>
+
+                        <div class="modality-card card-text" id="card-text-summary">
+                            <div class="mod-header">
+                                <span><i class="fa-solid fa-font"></i> Text Content</span>
+                            </div>
+                            <h4 id="text-prediction-label">Neutral</h4>
+                            <small id="text-prediction-conf">Confidence: 15.0%</small>
+                        </div>
+                    </div>
+
+                    <!-- Chart Visualizer -->
+                    <div class="chart-container">
+                        <h3>Probability Distributions</h3>
+                        <canvas id="probsChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
