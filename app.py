@@ -76,6 +76,8 @@ def query_hf_api(model_name: str, payload: dict) -> dict:
         headers["Authorization"] = f"Bearer {token}"
     
     response = requests.post(API_URL, json=payload, headers=headers, timeout=12)
+    if response.status_code != 200:
+        print(f"HF API {model_name} failed with status {response.status_code}: {response.text}")
     response.raise_for_status()
     return response.json()
 
@@ -115,25 +117,33 @@ def get_text_predictions(text: str):
             print(f"Text prediction API attempt {retry} failed: {e}")
             time.sleep(2)
             
-    # Fallback: simple text classification based on keywords in case API is offline
-    print("HF API offline. Falling back to rule-based text prediction.")
-    probs = np.ones(7) * 0.05
-    probs[label2idx['neutral']] = 0.70
+    # Fallback: robust vocabulary-based text emotion classifier
+    print("HF API offline. Falling back to vocabulary-based text prediction.")
     text_lower = text.lower()
-    if any(w in text_lower for w in ["happy", "glad", "joy", "wonderful", "great", "awesome", "excited"]):
-        probs[label2idx['happy']] = 0.90
-        probs[label2idx['neutral']] = 0.05
-    elif any(w in text_lower for w in ["sad", "depressed", "unhappy", "cry", "sorrow", "pain", "hurt"]):
-        probs[label2idx['sad']] = 0.90
-        probs[label2idx['neutral']] = 0.05
-    elif any(w in text_lower for w in ["angry", "mad", "furious", "hate", "rage"]):
-        probs[label2idx['angry']] = 0.90
-        probs[label2idx['neutral']] = 0.05
-    elif any(w in text_lower for w in ["afraid", "fear", "scared", "terrified", "frightened"]):
-        probs[label2idx['fearful']] = 0.90
-        probs[label2idx['neutral']] = 0.05
+    scores = np.zeros(7)
     
-    return probs / probs.sum()
+    vocab = {
+        'angry': ['angry', 'mad', 'furious', 'annoyed', 'pissed', 'irritated', 'hate', 'rage', 'anger', 'resent', 'offended'],
+        'disgust': ['disgust', 'gross', 'nasty', 'yuck', 'eww', 'revolting', 'sickening', 'loathe', 'detest', 'nausea'],
+        'fearful': ['fear', 'scared', 'afraid', 'terrified', 'frightened', 'panic', 'shaking', 'heartbeat', 'running', 'alone', 'follow', 'danger', 'creepy', 'alarm', 'anxious', 'worried', 'apprehensive'],
+        'happy': ['happy', 'glad', 'joy', 'wonderful', 'great', 'awesome', 'excited', 'smile', 'laugh', 'love', 'pleasant', 'celebrate', 'cheer', 'content', 'satisfied'],
+        'sad': ['sad', 'depressed', 'unhappy', 'cry', 'sorrow', 'pain', 'hurt', 'grief', 'lonely', 'tear', 'gloomy', 'miserable', 'grieved', 'melancholy'],
+        'surprised': ['surprise', 'suddenly', 'expecting', 'shocked', 'open', 'clapping', 'unexpected', 'staring', 'wonder', 'astonished', 'amazed', 'startled', 'unbelievable']
+    }
+    
+    for label_name, words in vocab.items():
+        idx = label2idx[label_name]
+        for w in words:
+            if w in text_lower:
+                scores[idx] += 2.0
+                
+    if scores.sum() == 0:
+        scores[label2idx['neutral']] = 1.0
+    else:
+        scores[label2idx['neutral']] += 0.2
+        
+    probs = softmax(scores)
+    return probs
 
 def get_text_embedding(text: str):
     """Retrieve 768-dim RoBERTa CLS embedding from HF Inference API."""
