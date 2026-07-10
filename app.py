@@ -4,8 +4,6 @@ import librosa
 import numpy as np
 import warnings
 import tempfile
-import requests
-import time
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for server safety
 import matplotlib.pyplot as plt
@@ -16,6 +14,7 @@ import onnxruntime as ort
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
+from transformers import AutoTokenizer
 
 warnings.filterwarnings("ignore")
 
@@ -50,7 +49,13 @@ print("Loading ONNX sessions...")
 audio_session = ort.InferenceSession("onnx_models/audio_model.onnx", providers=["CPUExecutionProvider"])
 face_session = ort.InferenceSession("onnx_models/face_pipeline.onnx", providers=["CPUExecutionProvider"])
 early_fusion_session = ort.InferenceSession("onnx_models/early_fusion.onnx", providers=["CPUExecutionProvider"])
+text_session = ort.InferenceSession("onnx_models/text_pipeline.onnx", providers=["CPUExecutionProvider"])
 print("ONNX sessions loaded successfully.")
+
+# Load Tokenizer locally
+print("Loading tokenizer...")
+tokenizer = AutoTokenizer.from_pretrained("j-hartmann/emotion-english-distilroberta-base")
+print("Tokenizer loaded successfully.")
 
 # MediaPipe BlazeFace Detector
 detector = None
@@ -62,106 +67,6 @@ try:
     print("MediaPipe Face Detector loaded successfully.")
 except Exception as e:
     print(f"Error loading MediaPipe detector: {e}")
-
-# ============================================================
-# HUGGING FACE INFERENCE API CLIENT
-# ============================================================
-
-def query_hf_api(model_name: str, payload: dict) -> dict:
-    """Helper to query Hugging Face Inference API."""
-    API_URL = f"https://api-inference.huggingface.co/models/{model_name}"
-    headers = {}
-    token = os.getenv("HF_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    
-    response = requests.post(API_URL, json=payload, headers=headers, timeout=12)
-    if response.status_code != 200:
-        print(f"HF API {model_name} failed with status {response.status_code}: {response.text}")
-    response.raise_for_status()
-    return response.json()
-
-def get_text_predictions(text: str):
-    """Retrieve text emotion probabilities from HF Inference API with loading-state retries."""
-    payload = {"inputs": text, "options": {"wait_for_model": True}}
-    
-    for retry in range(3):
-        try:
-            res = query_hf_api("j-hartmann/emotion-english-distilroberta-base", payload)
-            if isinstance(res, dict) and "error" in res:
-                print(f"HF API returned error: {res['error']}. Retrying...")
-                time.sleep(3)
-                continue
-                
-            # Parse result: list of dicts like [[{"label": "joy", "score": 0.98}, ...]]
-            if isinstance(res, list) and len(res) > 0:
-                items = res[0]
-                label_map = {
-                    'anger': 'angry',
-                    'disgust': 'disgust',
-                    'fear': 'fearful',
-                    'joy': 'happy',
-                    'neutral': 'neutral',
-                    'sadness': 'sad',
-                    'surprise': 'surprised'
-                }
-                probs = np.zeros(7)
-                for item in items:
-                    label_name = item['label']
-                    score = item['score']
-                    mapped_name = label_map.get(label_name, label_name)
-                    if mapped_name in label2idx:
-                        probs[label2idx[mapped_name]] = score
-                return probs
-        except Exception as e:
-            print(f"Text prediction API attempt {retry} failed: {e}")
-            time.sleep(2)
-            
-    # Fallback: robust vocabulary-based text emotion classifier
-    print("HF API offline. Falling back to vocabulary-based text prediction.")
-    text_lower = text.lower()
-    scores = np.zeros(7)
-    
-    vocab = {
-        'angry': ['angry', 'mad', 'furious', 'annoyed', 'pissed', 'irritated', 'hate', 'rage', 'anger', 'resent', 'offended'],
-        'disgust': ['disgust', 'gross', 'nasty', 'yuck', 'eww', 'revolting', 'sickening', 'loathe', 'detest', 'nausea'],
-        'fearful': ['fear', 'scared', 'afraid', 'terrified', 'frightened', 'panic', 'shaking', 'heartbeat', 'running', 'alone', 'follow', 'danger', 'creepy', 'alarm', 'anxious', 'worried', 'apprehensive'],
-        'happy': ['happy', 'glad', 'joy', 'wonderful', 'great', 'awesome', 'excited', 'smile', 'laugh', 'love', 'pleasant', 'celebrate', 'cheer', 'content', 'satisfied'],
-        'sad': ['sad', 'depressed', 'unhappy', 'cry', 'sorrow', 'pain', 'hurt', 'grief', 'lonely', 'tear', 'gloomy', 'miserable', 'grieved', 'melancholy'],
-        'surprised': ['surprise', 'suddenly', 'expecting', 'shocked', 'open', 'clapping', 'unexpected', 'staring', 'wonder', 'astonished', 'amazed', 'startled', 'unbelievable']
-    }
-    
-    for label_name, words in vocab.items():
-        idx = label2idx[label_name]
-        for w in words:
-            if w in text_lower:
-                scores[idx] += 2.0
-                
-    if scores.sum() == 0:
-        scores[label2idx['neutral']] = 1.0
-    else:
-        scores[label2idx['neutral']] += 0.2
-        
-    probs = softmax(scores)
-    return probs
-
-def get_text_embedding(text: str):
-    """Retrieve 768-dim RoBERTa CLS embedding from HF Inference API."""
-    payload = {"inputs": text, "options": {"wait_for_model": True}}
-    for retry in range(3):
-        try:
-            res = query_hf_api("roberta-base", payload)
-            if isinstance(res, list) and len(res) > 0 and len(res[0]) > 0:
-                cls_emb = np.array(res[0][0], dtype=np.float32)
-                if cls_emb.shape == (768,):
-                    return cls_emb
-        except Exception as e:
-            print(f"Text embedding API attempt {retry} failed: {e}")
-            time.sleep(2)
-            
-    # Fallback CLS embedding
-    print("HF API offline. Returning zero vector for text embedding.")
-    return np.zeros(768, dtype=np.float32)
 
 # ============================================================
 # PREPROCESSING FUNCTIONS
@@ -306,21 +211,50 @@ def analyze_multimodal_emotion(text_input, audio_input_path, video_input_path):
     
     temp_files = []
     
-    # 1. PROCESS TEXT MODALITY
+    # 1. PROCESS TEXT MODALITY (Using Local ONNX Model)
     if text_input and text_input.strip():
         try:
-            # Call HF Inference API for predictions
-            probs = get_text_predictions(text_input)
-            probs_dict["text"] = probs
-            active_modalities["text"] = {labels[i]: float(probs[i]) for i in range(7)}
+            # Tokenize text inputs
+            inputs = tokenizer(text_input, padding=True, truncation=True, return_tensors="np")
+            input_ids = inputs["input_ids"].astype(np.int64)
+            attention_mask = inputs["attention_mask"].astype(np.int64)
             
-            # Call HF Inference API for features (early fusion)
-            raw_text_feat = get_text_embedding(text_input)
+            # Run text pipeline ONNX session
+            logits, raw_text_feat = text_session.run(None, {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask
+            })
             
-            # Normalize embedding
+            # Calculate probabilities
+            probs = softmax(logits[0])
+            
+            # Map labels to probabilities
+            label_map = {
+                'anger': 'angry',
+                'disgust': 'disgust',
+                'fear': 'fearful',
+                'joy': 'happy',
+                'neutral': 'neutral',
+                'sadness': 'sad',
+                'surprise': 'surprised'
+            }
+            
+            mapped_probs = np.zeros(7)
+            # GoEmotions outputs 7 labels: anger, disgust, fear, joy, neutral, sadness, surprise
+            # In index order of Hugging Face pipeline output
+            hf_labels = ['anger', 'disgust', 'fear', 'joy', 'neutral', 'sadness', 'surprise']
+            for i, score in enumerate(probs):
+                hf_lbl = hf_labels[i]
+                mapped_lbl = label_map[hf_lbl]
+                mapped_probs[label2idx[mapped_lbl]] = score
+                
+            probs_dict["text"] = mapped_probs
+            active_modalities["text"] = {labels[i]: float(mapped_probs[i]) for i in range(7)}
+            
+            # Normalize embedding for early fusion
             mean_vals = np.array([text_mean[f"roberta_{i}"] for i in range(768)], dtype=np.float32)
             std_vals = np.array([text_std[f"roberta_{i}"] for i in range(768)], dtype=np.float32)
-            norm_feat = (raw_text_feat - mean_vals) / std_vals
+            norm_feat = (raw_text_feat[0] - mean_vals) / std_vals
             
             feats_dict["text"] = norm_feat.astype(np.float32)
         except Exception as e:

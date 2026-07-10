@@ -10,3 +10,4 @@ librosa
 requests
 jinja2
 markupsafe
+transformers
