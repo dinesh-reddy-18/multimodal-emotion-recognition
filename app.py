@@ -31,16 +31,16 @@ def softmax(x):
 
 # Load stats
 audio_stats = np.load("onnx_models/audio_stats.npz", allow_pickle=True)
-audio_mean = audio_stats["mean"]
-audio_std = audio_stats["std"]
+audio_mean = audio_stats["mean"].item()
+audio_std = audio_stats["std"].item()
 
 face_stats = np.load("onnx_models/face_stats.npz", allow_pickle=True)
-face_mean = face_stats["mean"]
-face_std = face_stats["std"]
+face_mean = face_stats["mean"].item()
+face_std = face_stats["std"].item()
 
 text_stats = np.load("onnx_models/text_stats.npz", allow_pickle=True)
-text_mean = text_stats["mean"]
-text_std = text_stats["std"]
+text_mean = text_stats["mean"].item()
+text_std = text_stats["std"].item()
 
 late_weights_data = np.load("onnx_models/late_fusion_weights.npz", allow_pickle=True)
 late_fusion_weights = late_weights_data["weights"]
@@ -281,7 +281,7 @@ def generate_distribution_plot(probs_dict, labels_list):
     ax.tick_params(colors='#f3f4f6')
     ax.legend(facecolor='#111827', labelcolor='#f3f4f6', edgecolor='none', fontsize=8)
     ax.set_ylim(0, 1.05)
-    ax.grid(True, color='rgba(255, 255, 255, 0.05)', linestyle='--', linewidth=0.5)
+    ax.grid(True, color=(1.0, 1.0, 1.0, 0.05), linestyle='--', linewidth=0.5)
     plt.tight_layout()
     return fig
 
