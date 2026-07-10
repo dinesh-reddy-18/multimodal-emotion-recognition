@@ -343,57 +343,60 @@ document.addEventListener('DOMContentLoaded', () => {
         videoRecordingStatus.textContent = "";
     }
 
-    // Live Webcam 3s Recording
+    // Live Webcam Recording
+    let videoTimerInterval = null;
+    let isRecordingVideo = false;
+
     btnRecordVideo.addEventListener('click', () => {
-        if (!webcamStream) {
-            alert("Please enable the webcam first.");
-            return;
-        }
-
-        videoChunks = [];
-        const options = { mimeType: 'video/webm;codecs=vp9' };
-        
-        try {
-            videoRecorder = new MediaRecorder(webcamStream);
-        } catch (e) {
-            videoRecorder = new MediaRecorder(webcamStream); // default fallback
-        }
-
-        videoRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-                videoChunks.push(e.data);
+        if (!isRecordingVideo) {
+            if (!webcamStream) {
+                alert("Please enable the webcam first.");
+                return;
             }
-        };
-
-        videoRecorder.onstop = () => {
-            const blob = new Blob(videoChunks, { type: 'video/webm' });
-            recordedVideoFile = new File([blob], "webcam_recording.webm", { type: 'video/webm' });
-            videoRecordingStatus.textContent = "Recording complete! Ready for analysis.";
-            btnRecordVideo.disabled = false;
-            btnRecordVideo.innerHTML = '<i class="fa-solid fa-circle"></i> Record (3s)';
-        };
-
-        // Start Recording
-        videoRecorder.start();
-        btnRecordVideo.disabled = true;
-        btnRecordVideo.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Recording...';
-
-        let count = 3;
-        videoRecordingStatus.textContent = `Recording live feed... ${count}s`;
-        const interval = setInterval(() => {
-            count--;
-            if (count > 0) {
-                videoRecordingStatus.textContent = `Recording live feed... ${count}s`;
-            } else {
-                clearInterval(interval);
+            isRecordingVideo = true;
+            videoChunks = [];
+            
+            try {
+                videoRecorder = new MediaRecorder(webcamStream);
+            } catch (e) {
+                videoRecorder = new MediaRecorder(webcamStream); // default fallback
             }
-        }, 1000);
 
-        setTimeout(() => {
+            videoRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    videoChunks.push(e.data);
+                }
+            };
+
+            videoRecorder.onstop = () => {
+                const blob = new Blob(videoChunks, { type: 'video/webm' });
+                recordedVideoFile = new File([blob], "webcam_recording.webm", { type: 'video/webm' });
+                videoRecordingStatus.textContent = "Recording complete! Ready for analysis.";
+                btnRecordVideo.innerHTML = '<i class="fa-solid fa-circle"></i> Start Recording';
+                isRecordingVideo = false;
+            };
+
+            videoRecorder.start();
+            btnRecordVideo.innerHTML = '<i class="fa-solid fa-stop"></i> Stop Recording';
+
+            let elapsed = 0;
+            videoRecordingStatus.textContent = `Recording live feed... 00:00`;
+            videoTimerInterval = setInterval(() => {
+                elapsed++;
+                const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                const secs = String(elapsed % 60).padStart(2, '0');
+                videoRecordingStatus.textContent = `Recording live feed... ${mins}:${secs}`;
+            }, 1000);
+        } else {
+            // Stop video recording
             if (videoRecorder && videoRecorder.state === "recording") {
                 videoRecorder.stop();
             }
-        }, 3000);
+            if (videoTimerInterval) {
+                clearInterval(videoTimerInterval);
+                videoTimerInterval = null;
+            }
+        }
     });
 
     // Live Microphone WAV Recording
@@ -403,65 +406,71 @@ document.addEventListener('DOMContentLoaded', () => {
     let leftChannel = [];
     let recordingLength = 0;
     let sampleRate = 44100;
+    let audioTimerInterval = null;
+    let isRecordingAudio = false;
 
     btnRecordMic.addEventListener('click', async () => {
-        btnRecordMic.disabled = true;
-        btnRecordMic.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Recording...';
-        audioRecordingStatus.textContent = "Recording voice... 3s";
-
-        try {
+        if (!isRecordingAudio) {
+            isRecordingAudio = true;
             leftChannel = [];
             recordingLength = 0;
-            micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            sampleRate = audioContext.sampleRate;
-            
-            const source = audioContext.createMediaStreamSource(micStream);
-            audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-            
-            audioProcessor.onaudioprocess = function(e) {
-                const left = e.inputBuffer.getChannelData(0);
-                leftChannel.push(new Float32Array(left));
-                recordingLength += 4096;
-            };
-            
-            source.connect(audioProcessor);
-            audioProcessor.connect(audioContext.destination);
+            btnRecordMic.innerHTML = '<i class="fa-solid fa-stop"></i> Stop Recording';
+            audioRecordingStatus.textContent = "Recording voice... 00:00";
 
-            let count = 3;
-            const interval = setInterval(() => {
-                count--;
-                if (count > 0) {
-                    audioRecordingStatus.textContent = `Recording voice... ${count}s`;
-                } else {
-                    clearInterval(interval);
-                }
-            }, 1000);
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                sampleRate = audioContext.sampleRate;
+                
+                const source = audioContext.createMediaStreamSource(micStream);
+                audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                audioProcessor.onaudioprocess = function(e) {
+                    const left = e.inputBuffer.getChannelData(0);
+                    leftChannel.push(new Float32Array(left));
+                    recordingLength += 4096;
+                };
+                
+                source.connect(audioProcessor);
+                audioProcessor.connect(audioContext.destination);
 
-            setTimeout(() => {
-                // Stop audio recording
-                if (audioProcessor) {
-                    audioProcessor.disconnect();
+                let elapsed = 0;
+                audioTimerInterval = setInterval(() => {
+                    elapsed++;
+                    const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                    const secs = String(elapsed % 60).padStart(2, '0');
+                    audioRecordingStatus.textContent = `Recording voice... ${mins}:${secs}`;
+                }, 1000);
+
+            } catch (err) {
+                alert(`Microphone access failed: ${err.message}`);
+                btnRecordMic.innerHTML = '<i class="fa-solid fa-microphone"></i> Record Speech';
+                audioRecordingStatus.textContent = "";
+                isRecordingAudio = false;
+            }
+        } else {
+            isRecordingAudio = false;
+            if (audioTimerInterval) {
+                clearInterval(audioTimerInterval);
+                audioTimerInterval = null;
+            }
+            
+            if (audioProcessor) {
+                audioProcessor.disconnect();
+                if (micStream) {
                     micStream.getTracks().forEach(track => track.stop());
                 }
-                
-                // Process buffer and save as WAV file
-                const leftBuffer = flattenArray(leftChannel, recordingLength);
-                const wavBuffer = writeWavFile(leftBuffer);
-                const blob = new Blob([wavBuffer], { type: 'audio/wav' });
-                
-                recordedAudioFile = new File([blob], "mic_recording.wav", { type: 'audio/wav' });
-                
-                audioRecordingStatus.textContent = "Recording complete! Ready for analysis.";
-                btnRecordMic.disabled = false;
-                btnRecordMic.innerHTML = '<i class="fa-solid fa-microphone"></i> Record Speech (3s)';
-            }, 3000);
-
-        } catch (err) {
-            alert(`Microphone access failed: ${err.message}`);
-            btnRecordMic.disabled = false;
-            btnRecordMic.innerHTML = '<i class="fa-solid fa-microphone"></i> Record Speech (3s)';
-            audioRecordingStatus.textContent = "";
+            }
+            
+            // Process buffer and save as WAV file
+            const leftBuffer = flattenArray(leftChannel, recordingLength);
+            const wavBuffer = writeWavFile(leftBuffer);
+            const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+            
+            recordedAudioFile = new File([blob], "mic_recording.wav", { type: 'audio/wav' });
+            
+            audioRecordingStatus.textContent = "Recording complete! Ready for analysis.";
+            btnRecordMic.innerHTML = '<i class="fa-solid fa-microphone"></i> Record Speech';
         }
     });
 

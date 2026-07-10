@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from PIL import Image
 from torchvision import models, transforms
-from transformers import RobertaTokenizer, RobertaModel
+from transformers import RobertaTokenizer, RobertaModel, AutoTokenizer, AutoModelForSequenceClassification
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
@@ -113,6 +113,9 @@ resnet18 = None
 early_fusion_model = None
 late_fusion_weights = None
 
+text_pretrained_tokenizer = None
+text_pretrained_model = None
+
 labels = ['angry', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
 label2idx = {l: i for i, l in enumerate(labels)}
 idx2label = {i: l for l, i in label2idx.items()}
@@ -151,6 +154,7 @@ def load_all_components():
 
     # 3. Text Baseline
     try:
+        global text_pretrained_tokenizer, text_pretrained_model
         text_ckpt = torch.load("models/text_baseline/mlp_roberta_baseline.pt", map_location=DEVICE, weights_only=False)
         text_model = MLPTextClassifier(input_dim=768, num_classes=7).to(DEVICE)
         text_model.load_state_dict(text_ckpt["model_state_dict"])
@@ -161,7 +165,12 @@ def load_all_components():
         roberta_tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
         roberta_model = RobertaModel.from_pretrained("roberta-base").to(DEVICE)
         roberta_model.eval()
-        print("Text MLP and pre-trained RoBERTa loaded successfully.")
+        
+        # Load high-accuracy pre-trained GoEmotions model
+        text_pretrained_tokenizer = AutoTokenizer.from_pretrained("j-hartmann/emotion-english-distilroberta-base")
+        text_pretrained_model = AutoModelForSequenceClassification.from_pretrained("j-hartmann/emotion-english-distilroberta-base").to(DEVICE)
+        text_pretrained_model.eval()
+        print("Text MLP, pre-trained RoBERTa, and GoEmotions models loaded successfully.")
     except Exception as e:
         print(f"Error loading Text model: {e}")
 
@@ -257,15 +266,15 @@ def detect_and_crop_face(image_bgr):
         return None
     return face_crop
 
-def preprocess_video(video_path: str) -> np.ndarray:
-    """Extract frames, crop faces, and extract average ResNet18 embedding."""
+def preprocess_video(video_path: str):
+    """Extract frames, crop faces, and extract ResNet18 embeddings for all valid frames."""
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if total_frames <= 0:
         cap.release()
         raise ValueError("Could not read frames from video")
         
-    n_frames = 10
+    n_frames = 15
     frame_indices = [int(i * total_frames / n_frames) for i in range(n_frames)]
     
     face_transform = transforms.Compose([
@@ -293,10 +302,10 @@ def preprocess_video(video_path: str) -> np.ndarray:
         
     x = torch.stack(frame_tensors).to(DEVICE)
     with torch.no_grad():
-        features = resnet18(x)
-        # Average feature vector over the frames
-        pooled = features.mean(dim=0).cpu().numpy()
-    return pooled
+        features = resnet18(x).cpu().numpy()
+        
+    pooled = features.mean(axis=0)
+    return features, pooled
 
 # ============================================================
 # API ENDPOINTS
@@ -332,20 +341,19 @@ async def predict_emotion(
     
     # 1. PROCESS TEXT MODALITY
     if text and text.strip():
-        if text_model is None:
+        if text_model is None or text_pretrained_model is None:
             raise HTTPException(status_code=500, detail="Text model is not initialized.")
         try:
+            # A. Get RoBERTa CLS embeddings for early fusion feature representation
             raw_text_feat = preprocess_text(text)
-            
-            # Normalize
             cols = [f"roberta_{i}" for i in range(768)]
             norm_feat = ((raw_text_feat - text_mean[cols]) / text_std[cols]).values.astype(np.float32)
             
-            # Predict
-            x = torch.tensor(norm_feat).unsqueeze(0).to(DEVICE)
+            # B. Get high-accuracy predictions from pre-trained GoEmotions model
+            pretrained_inputs = text_pretrained_tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(DEVICE)
             with torch.no_grad():
-                logits = text_model(x)
-                probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+                pretrained_logits = text_pretrained_model(**pretrained_inputs).logits
+                probs = torch.softmax(pretrained_logits, dim=1).cpu().numpy()[0]
                 
             probs_dict["text"] = probs.tolist()
             feats_dict["text"] = norm_feat
@@ -402,15 +410,25 @@ async def predict_emotion(
             # A. Process Video Frames (Face crops baseline prediction)
             if face_model is not None:
                 try:
-                    raw_face_feat = preprocess_video(str(temp_video_file))
+                    raw_face_features, pooled_face_feat = preprocess_video(str(temp_video_file))
                     cols = [f"face_{i:03d}" for i in range(512)]
-                    norm_face_feat = ((raw_face_feat - face_mean[cols]) / face_std[cols]).values.astype(np.float32)
                     
-                    x_face = torch.tensor(norm_face_feat).unsqueeze(0).to(DEVICE)
-                    with torch.no_grad():
-                        logits = face_model(x_face)
-                        probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+                    # Normalize pooled features for early fusion
+                    norm_face_feat = ((pooled_face_feat - face_mean[cols]) / face_std[cols]).values.astype(np.float32)
+                    
+                    # Compute prediction probabilities per valid frame and average them
+                    all_probs = []
+                    for frame_feat in raw_face_features:
+                        norm_frame_feat = ((frame_feat - face_mean[cols]) / face_std[cols]).values.astype(np.float32)
+                        x_face = torch.tensor(norm_frame_feat).unsqueeze(0).to(DEVICE)
+                        with torch.no_grad():
+                            logits = face_model(x_face)
+                            frame_probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+                        all_probs.append(frame_probs)
                         
+                    # Aggregate predictions temporally: mean probability aggregation
+                    probs = np.mean(all_probs, axis=0)
+                    
                     probs_dict["face"] = probs.tolist()
                     feats_dict["face"] = norm_face_feat
                     active_modalities["face_video"] = {
@@ -487,8 +505,9 @@ async def predict_emotion(
         curr_probs.append(np.array(probs_dict["face"]))
         
     curr_weights = np.array(curr_weights)
-    if curr_weights.sum() > 0:
-        curr_weights = curr_weights / curr_weights.sum() # renormalize
+    weight_sum = curr_weights.sum()
+    if weight_sum > 0:
+        curr_weights = curr_weights / weight_sum # renormalize
         fused_probs = np.zeros(7)
         for w, p in zip(curr_weights, curr_probs):
             fused_probs += w * p
