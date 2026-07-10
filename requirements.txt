@@ -1,13 +1,12 @@
 gradio
-torch
-torchvision
-torchaudio
-transformers
-librosa
+numpy
 opencv-python-headless
 mediapipe
 pandas
 moviepy
 matplotlib
+onnxruntime
+librosa
+requests
 jinja2
 markupsafe

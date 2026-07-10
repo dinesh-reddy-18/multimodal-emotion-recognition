@@ -2,216 +2,160 @@ import os
 import cv2
 import librosa
 import numpy as np
-import pandas as pd
-import torch
-import torch.nn as nn
 import warnings
 import tempfile
+import requests
+import time
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for server safety
 import matplotlib.pyplot as plt
 import gradio as gr
 from PIL import Image
-from pathlib import Path
 from moviepy import VideoFileClip
-from torchvision import models, transforms
-from transformers import RobertaTokenizer, RobertaModel, AutoTokenizer, AutoModelForSequenceClassification
+import onnxruntime as ort
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 
 warnings.filterwarnings("ignore")
 
-# Define device
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Gradio App running on device: {DEVICE}")
-
-# Define the MLP model classes exactly as trained
-class MLPAudioClassifier(nn.Module):
-    def __init__(self, input_dim=39, hidden_dim=128, num_classes=7, dropout=0.4):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.BatchNorm1d(hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, num_classes),
-        )
-    def forward(self, x): return self.net(x)
-
-class MLPTextClassifier(nn.Module):
-    def __init__(self, input_dim=768, hidden_dim=128, num_classes=7, dropout=0.4):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, num_classes),
-        )
-    def forward(self, x): return self.net(x)
-
-class MLPFaceClassifier(nn.Module):
-    def __init__(self, input_dim=512, hidden_dim=256, num_classes=7, dropout=0.3):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.BatchNorm1d(hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, num_classes),
-        )
-    def forward(self, x): return self.net(x)
-
-class JointMLPFusionClassifier(nn.Module):
-    def __init__(self, input_dim=1319, hidden_dim=256, num_classes=7, dropout=0.3):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.BatchNorm1d(hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim // 2, num_classes),
-        )
-    def forward(self, x): return self.net(x)
-
-# Setup Global variables to hold models and statistics
-audio_model = None
-audio_mean = None
-audio_std = None
-
-text_model = None
-text_mean = None
-text_std = None
-roberta_tokenizer = None
-roberta_model = None
-text_pretrained_tokenizer = None
-text_pretrained_model = None
-
-face_model = None
-face_mean = None
-face_std = None
-resnet18 = None
-
-early_fusion_model = None
-late_fusion_weights = None
-detector = None
-
+# Define labels
 labels = ['angry', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
 label2idx = {l: i for i, l in enumerate(labels)}
 idx2label = {i: l for l, i in label2idx.items()}
 
-# Load all components (called once on startup)
-def load_all_components():
-    global audio_model, audio_mean, audio_std
-    global text_model, text_mean, text_std, roberta_tokenizer, roberta_model
-    global text_pretrained_tokenizer, text_pretrained_model
-    global face_model, face_mean, face_std, resnet18, detector
-    global early_fusion_model, late_fusion_weights
+# Helper functions
+def softmax(x):
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum(axis=-1, keepdims=True)
+
+# Load stats
+audio_stats = np.load("onnx_models/audio_stats.npz", allow_pickle=True)
+audio_mean = audio_stats["mean"]
+audio_std = audio_stats["std"]
+
+face_stats = np.load("onnx_models/face_stats.npz", allow_pickle=True)
+face_mean = face_stats["mean"]
+face_std = face_stats["std"]
+
+text_stats = np.load("onnx_models/text_stats.npz", allow_pickle=True)
+text_mean = text_stats["mean"]
+text_std = text_stats["std"]
+
+late_weights_data = np.load("onnx_models/late_fusion_weights.npz", allow_pickle=True)
+late_fusion_weights = late_weights_data["weights"]
+
+# Load ONNX sessions on CPU (very low memory!)
+print("Loading ONNX sessions...")
+audio_session = ort.InferenceSession("onnx_models/audio_model.onnx", providers=["CPUExecutionProvider"])
+face_session = ort.InferenceSession("onnx_models/face_pipeline.onnx", providers=["CPUExecutionProvider"])
+early_fusion_session = ort.InferenceSession("onnx_models/early_fusion.onnx", providers=["CPUExecutionProvider"])
+print("ONNX sessions loaded successfully.")
+
+# MediaPipe BlazeFace Detector
+detector = None
+try:
+    model_path = "models/face/blaze_face_short_range.tflite"
+    base_options = mp_python.BaseOptions(model_asset_path=model_path)
+    options = mp_vision.FaceDetectorOptions(base_options=base_options)
+    detector = mp_vision.FaceDetector.create_from_options(options)
+    print("MediaPipe Face Detector loaded successfully.")
+except Exception as e:
+    print(f"Error loading MediaPipe detector: {e}")
+
+# ============================================================
+# HUGGING FACE INFERENCE API CLIENT
+# ============================================================
+
+def query_hf_api(model_name: str, payload: dict) -> dict:
+    """Helper to query Hugging Face Inference API."""
+    API_URL = f"https://api-inference.huggingface.co/models/{model_name}"
+    headers = {}
+    token = os.getenv("HF_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     
-    print("Loading ML models and pipeline checkpoints...")
+    response = requests.post(API_URL, json=payload, headers=headers, timeout=12)
+    response.raise_for_status()
+    return response.json()
+
+def get_text_predictions(text: str):
+    """Retrieve text emotion probabilities from HF Inference API with loading-state retries."""
+    payload = {"inputs": text, "options": {"wait_for_model": True}}
     
-    # 1. MediaPipe BlazeFace Detector
-    try:
-        model_path = "models/face/blaze_face_short_range.tflite"
-        base_options = mp_python.BaseOptions(model_asset_path=model_path)
-        options = mp_vision.FaceDetectorOptions(base_options=base_options)
-        detector = mp_vision.FaceDetector.create_from_options(options)
-        print("MediaPipe Face Detector loaded successfully.")
-    except Exception as e:
-        print(f"Error loading MediaPipe detector: {e}")
+    for retry in range(3):
+        try:
+            res = query_hf_api("j-hartmann/emotion-english-distilroberta-base", payload)
+            if isinstance(res, dict) and "error" in res:
+                print(f"HF API returned error: {res['error']}. Retrying...")
+                time.sleep(3)
+                continue
+                
+            # Parse result: list of dicts like [[{"label": "joy", "score": 0.98}, ...]]
+            if isinstance(res, list) and len(res) > 0:
+                items = res[0]
+                label_map = {
+                    'anger': 'angry',
+                    'disgust': 'disgust',
+                    'fear': 'fearful',
+                    'joy': 'happy',
+                    'neutral': 'neutral',
+                    'sadness': 'sad',
+                    'surprise': 'surprised'
+                }
+                probs = np.zeros(7)
+                for item in items:
+                    label_name = item['label']
+                    score = item['score']
+                    mapped_name = label_map.get(label_name, label_name)
+                    if mapped_name in label2idx:
+                        probs[label2idx[mapped_name]] = score
+                return probs
+        except Exception as e:
+            print(f"Text prediction API attempt {retry} failed: {e}")
+            time.sleep(2)
+            
+    # Fallback: simple text classification based on keywords in case API is offline
+    print("HF API offline. Falling back to rule-based text prediction.")
+    probs = np.ones(7) * 0.05
+    probs[label2idx['neutral']] = 0.70
+    text_lower = text.lower()
+    if any(w in text_lower for w in ["happy", "glad", "joy", "wonderful", "great", "awesome", "excited"]):
+        probs[label2idx['happy']] = 0.90
+        probs[label2idx['neutral']] = 0.05
+    elif any(w in text_lower for w in ["sad", "depressed", "unhappy", "cry", "sorrow", "pain", "hurt"]):
+        probs[label2idx['sad']] = 0.90
+        probs[label2idx['neutral']] = 0.05
+    elif any(w in text_lower for w in ["angry", "mad", "furious", "hate", "rage"]):
+        probs[label2idx['angry']] = 0.90
+        probs[label2idx['neutral']] = 0.05
+    elif any(w in text_lower for w in ["afraid", "fear", "scared", "terrified", "frightened"]):
+        probs[label2idx['fearful']] = 0.90
+        probs[label2idx['neutral']] = 0.05
+    
+    return probs / probs.sum()
 
-    # 2. Audio Baseline
-    try:
-        audio_ckpt = torch.load("models/audio_baseline/mlp_mfcc_baseline.pt", map_location=DEVICE, weights_only=False)
-        audio_model = MLPAudioClassifier(input_dim=39, num_classes=7).to(DEVICE)
-        audio_model.load_state_dict(audio_ckpt["model_state_dict"])
-        audio_model.eval()
-        audio_mean = pd.Series(audio_ckpt["mean"])
-        audio_std = pd.Series(audio_ckpt["std"])
-        print("Audio MLP baseline loaded successfully.")
-    except Exception as e:
-        print(f"Error loading Audio model: {e}")
-
-    # 3. Text Baseline & Pre-trained Emotion Models
-    try:
-        text_ckpt = torch.load("models/text_baseline/mlp_roberta_baseline.pt", map_location=DEVICE, weights_only=False)
-        text_model = MLPTextClassifier(input_dim=768, num_classes=7).to(DEVICE)
-        text_model.load_state_dict(text_ckpt["model_state_dict"])
-        text_model.eval()
-        text_mean = pd.Series(text_ckpt["mean"])
-        text_std = pd.Series(text_ckpt["std"])
-        
-        roberta_tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-        roberta_model = RobertaModel.from_pretrained("roberta-base").to(DEVICE)
-        roberta_model.eval()
-        
-        # Load high-accuracy pre-trained GoEmotions model
-        text_pretrained_tokenizer = AutoTokenizer.from_pretrained("j-hartmann/emotion-english-distilroberta-base")
-        text_pretrained_model = AutoModelForSequenceClassification.from_pretrained("j-hartmann/emotion-english-distilroberta-base").to(DEVICE)
-        text_pretrained_model.eval()
-        print("Text MLP, pre-trained RoBERTa, and GoEmotions models loaded successfully.")
-    except Exception as e:
-        print(f"Error loading Text models: {e}")
-
-    # 4. Face/Image Baseline
-    try:
-        face_ckpt = torch.load("models/face/resnet18_face_baseline.pt", map_location=DEVICE, weights_only=False)
-        face_model = MLPFaceClassifier(input_dim=512, num_classes=7).to(DEVICE)
-        face_model.load_state_dict(face_ckpt["model_state_dict"])
-        face_model.eval()
-        face_mean = pd.Series(face_ckpt["mean"])
-        face_std = pd.Series(face_ckpt["std"])
-        
-        resnet18 = models.resnet18(pretrained=True)
-        resnet18.fc = nn.Identity()
-        resnet18 = resnet18.to(DEVICE)
-        resnet18.eval()
-        print("Face MLP and ResNet18 model loaded successfully.")
-    except Exception as e:
-        print(f"Error loading Face model: {e}")
-
-    # 5. Fusion Models
-    try:
-        early_ckpt = torch.load("models/fusion/early_fusion_model.pt", map_location=DEVICE, weights_only=False)
-        early_fusion_model = JointMLPFusionClassifier(input_dim=1319, num_classes=7).to(DEVICE)
-        early_fusion_model.load_state_dict(early_ckpt["model_state_dict"])
-        early_fusion_model.eval()
-        print("Early Fusion joint MLP model loaded successfully.")
-    except Exception as e:
-        print(f"Error loading Early Fusion model: {e}")
-        
-    try:
-        late_ckpt = torch.load("models/fusion/late_fusion_config.pt", map_location=DEVICE, weights_only=False)
-        late_fusion_weights = late_ckpt["best_weights"]
-        print(f"Late Fusion config loaded. Weights: {late_fusion_weights}")
-    except Exception as e:
-        print(f"Error loading Late Fusion config: {e}")
-        late_fusion_weights = (0.33, 0.33, 0.34)
+def get_text_embedding(text: str):
+    """Retrieve 768-dim RoBERTa CLS embedding from HF Inference API."""
+    payload = {"inputs": text, "options": {"wait_for_model": True}}
+    for retry in range(3):
+        try:
+            res = query_hf_api("roberta-base", payload)
+            if isinstance(res, list) and len(res) > 0 and len(res[0]) > 0:
+                cls_emb = np.array(res[0][0], dtype=np.float32)
+                if cls_emb.shape == (768,):
+                    return cls_emb
+        except Exception as e:
+            print(f"Text embedding API attempt {retry} failed: {e}")
+            time.sleep(2)
+            
+    # Fallback CLS embedding
+    print("HF API offline. Returning zero vector for text embedding.")
+    return np.zeros(768, dtype=np.float32)
 
 # ============================================================
 # PREPROCESSING FUNCTIONS
 # ============================================================
-
-def preprocess_text(text: str) -> np.ndarray:
-    """Tokenize and extract RoBERTa [CLS] pooled embedding."""
-    inputs = roberta_tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(DEVICE)
-    with torch.no_grad():
-        outputs = roberta_model(**inputs)
-        cls_embedding = outputs.last_hidden_state[:, 0, :].squeeze(0).cpu().numpy()
-    return cls_embedding
 
 def preprocess_audio(wav_path: str) -> np.ndarray:
     """Compute static 39-dim MFCC values."""
@@ -256,8 +200,18 @@ def detect_and_crop_face(image_bgr):
         return None
     return face_crop
 
+def preprocess_face_numpy(face_bgr):
+    """Resize, transpose, and normalize crop for ResNet18."""
+    resized = cv2.resize(face_bgr, (224, 224))
+    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    normalized = (rgb - mean) / std
+    chw = normalized.transpose(2, 0, 1)
+    return chw
+
 def preprocess_video(video_path: str):
-    """Extract frames, crop faces, and extract ResNet18 embeddings for all valid frames."""
+    """Extract frames, crop faces, and extract ResNet18 embeddings using ONNX."""
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if total_frames <= 0:
@@ -267,12 +221,6 @@ def preprocess_video(video_path: str):
     n_frames = 15
     frame_indices = [int(i * total_frames / n_frames) for i in range(n_frames)]
     
-    face_transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-    
     frame_tensors = []
     for f_idx in frame_indices:
         cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
@@ -280,21 +228,23 @@ def preprocess_video(video_path: str):
         if success:
             cropped = detect_and_crop_face(img)
             if cropped is not None:
-                cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
-                pil_img = Image.fromarray(cropped_rgb)
-                frame_tensors.append(face_transform(pil_img))
+                chw = preprocess_face_numpy(cropped)
+                frame_tensors.append(chw)
                 
     cap.release()
     
     if len(frame_tensors) == 0:
         raise ValueError("No faces detected in video file.")
         
-    x = torch.stack(frame_tensors).to(DEVICE)
-    with torch.no_grad():
-        features = resnet18(x).cpu().numpy()
-        
-    pooled = features.mean(axis=0)
-    return features, pooled
+    x = np.stack(frame_tensors).astype(np.float32)
+    
+    # Run the face pipeline ONNX session
+    features_out, logits_out = face_session.run(None, {"input_image": x})
+    
+    # Average the features across the batch axis for early fusion
+    pooled_feat = features_out.mean(axis=0)
+    
+    return features_out, logits_out, pooled_feat
 
 def generate_distribution_plot(probs_dict, labels_list):
     """Generate Matplotlib bar chart for visual feedback."""
@@ -335,15 +285,11 @@ def generate_distribution_plot(probs_dict, labels_list):
     plt.tight_layout()
     return fig
 
-# Initialize checkpoints
-load_all_components()
-
 # ============================================================
 # CORE PREDICTION INTERFACE
 # ============================================================
 
 def analyze_multimodal_emotion(text_input, audio_input_path, video_input_path):
-    # Setup track variables
     active_modalities = {}
     probs_dict = {}
     feats_dict = {}
@@ -353,66 +299,63 @@ def analyze_multimodal_emotion(text_input, audio_input_path, video_input_path):
     # 1. PROCESS TEXT MODALITY
     if text_input and text_input.strip():
         try:
-            # Feature extraction for early fusion
-            raw_text_feat = preprocess_text(text_input)
-            cols = [f"roberta_{i}" for i in range(768)]
-            norm_feat = ((raw_text_feat - text_mean[cols]) / text_std[cols]).values.astype(np.float32)
-            
-            # Predict using GoEmotions classifier
-            pretrained_inputs = text_pretrained_tokenizer(text_input, return_tensors="pt", padding=True, truncation=True).to(DEVICE)
-            with torch.no_grad():
-                pretrained_logits = text_pretrained_model(**pretrained_inputs).logits
-                probs = torch.softmax(pretrained_logits, dim=1).cpu().numpy()[0]
-                
+            # Call HF Inference API for predictions
+            probs = get_text_predictions(text_input)
             probs_dict["text"] = probs
-            feats_dict["text"] = norm_feat
             active_modalities["text"] = {labels[i]: float(probs[i]) for i in range(7)}
+            
+            # Call HF Inference API for features (early fusion)
+            raw_text_feat = get_text_embedding(text_input)
+            
+            # Normalize embedding
+            mean_vals = np.array([text_mean[f"roberta_{i}"] for i in range(768)], dtype=np.float32)
+            std_vals = np.array([text_std[f"roberta_{i}"] for i in range(768)], dtype=np.float32)
+            norm_feat = (raw_text_feat - mean_vals) / std_vals
+            
+            feats_dict["text"] = norm_feat.astype(np.float32)
         except Exception as e:
             print(f"Error serving text analysis: {e}")
             
-    # 2. PROCESS AUDIO MODALITY (Direct Microphone or File Upload)
+    # 2. PROCESS AUDIO MODALITY
     if audio_input_path:
         try:
             raw_audio_feat = preprocess_audio(audio_input_path)
-            cols = [f"mfcc_{i:02d}" for i in range(39)]
-            norm_feat = ((raw_audio_feat - audio_mean[cols]) / audio_std[cols]).values.astype(np.float32)
             
-            x_aud = torch.tensor(norm_feat).unsqueeze(0).to(DEVICE)
-            with torch.no_grad():
-                logits = audio_model(x_aud)
-                probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-                
+            # Normalize MFCCs
+            mean_vals = np.array([audio_mean[f"mfcc_{i:02d}"] for i in range(39)], dtype=np.float32)
+            std_vals = np.array([audio_std[f"mfcc_{i:02d}"] for i in range(39)], dtype=np.float32)
+            norm_feat = (raw_audio_feat - mean_vals) / std_vals
+            
+            x_aud = norm_feat.astype(np.float32).reshape(1, 39)
+            
+            # Run ONNX session
+            logits = audio_session.run(None, {"input": x_aud})[0]
+            probs = softmax(logits)[0]
+            
             probs_dict["audio"] = probs
-            feats_dict["audio"] = norm_feat
+            feats_dict["audio"] = norm_feat.astype(np.float32)
             active_modalities["audio"] = {labels[i]: float(probs[i]) for i in range(7)}
         except Exception as e:
             print(f"Error serving audio analysis: {e}")
             
-    # 3. PROCESS VIDEO MODALITY (Contains Face frames & Optional Video Audio track)
+    # 3. PROCESS VIDEO MODALITY
     if video_input_path:
         try:
             # A. Process Video Frames (Face crops classification)
             try:
-                raw_face_features, pooled_face_feat = preprocess_video(video_input_path)
-                cols = [f"face_{i:03d}" for i in range(512)]
+                features_out, logits_out, pooled_face_feat = preprocess_video(video_input_path)
                 
                 # Normalize pooled features for early fusion representation
-                norm_face_feat = ((pooled_face_feat - face_mean[cols]) / face_std[cols]).values.astype(np.float32)
+                mean_vals = np.array([face_mean[f"face_{i:03d}"] for i in range(512)], dtype=np.float32)
+                std_vals = np.array([face_std[f"face_{i:03d}"] for i in range(512)], dtype=np.float32)
+                norm_face_feat = (pooled_face_feat - mean_vals) / std_vals
                 
                 # Compute predictions per frame individually and aggregate temporally
-                all_probs = []
-                for frame_feat in raw_face_features:
-                    norm_frame_feat = ((frame_feat - face_mean[cols]) / face_std[cols]).values.astype(np.float32)
-                    x_face = torch.tensor(norm_frame_feat).unsqueeze(0).to(DEVICE)
-                    with torch.no_grad():
-                        logits = face_model(x_face)
-                        frame_probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-                    all_probs.append(frame_probs)
-                    
+                all_probs = [softmax(l)[0] for l in logits_out]
                 face_probs = np.mean(all_probs, axis=0)
                 
                 probs_dict["face"] = face_probs
-                feats_dict["face"] = norm_face_feat
+                feats_dict["face"] = norm_face_feat.astype(np.float32)
                 active_modalities["face"] = {labels[i]: float(face_probs[i]) for i in range(7)}
             except Exception as e:
                 print(f"Error processing video face frames: {e}")
@@ -431,16 +374,16 @@ def analyze_multimodal_emotion(text_input, audio_input_path, video_input_path):
                         
                         # Process extracted audio
                         raw_audio_feat = preprocess_audio(extracted_wav)
-                        cols = [f"mfcc_{i:02d}" for i in range(39)]
-                        norm_feat = ((raw_audio_feat - audio_mean[cols]) / audio_std[cols]).values.astype(np.float32)
+                        mean_vals = np.array([audio_mean[f"mfcc_{i:02d}"] for i in range(39)], dtype=np.float32)
+                        std_vals = np.array([audio_std[f"mfcc_{i:02d}"] for i in range(39)], dtype=np.float32)
+                        norm_feat = (raw_audio_feat - mean_vals) / std_vals
                         
-                        x_aud = torch.tensor(norm_feat).unsqueeze(0).to(DEVICE)
-                        with torch.no_grad():
-                            logits = audio_model(x_aud)
-                            probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-                            
+                        x_aud = norm_feat.astype(np.float32).reshape(1, 39)
+                        logits = audio_session.run(None, {"input": x_aud})[0]
+                        probs = softmax(logits)[0]
+                        
                         probs_dict["audio"] = probs
-                        feats_dict["audio"] = norm_feat
+                        feats_dict["audio"] = norm_feat.astype(np.float32)
                         active_modalities["audio"] = {labels[i]: float(probs[i]) for i in range(7)}
                     else:
                         clip.close()
@@ -481,24 +424,21 @@ def analyze_multimodal_emotion(text_input, audio_input_path, video_input_path):
         fusion_results["late_fusion"] = {labels[i]: float(fused_probs[i]) for i in range(7)}
     
     # Early Fusion
-    if early_fusion_model is not None:
-        try:
-            feat_a = feats_dict.get("audio", np.zeros(39, dtype=np.float32))
-            feat_t = feats_dict.get("text", np.zeros(768, dtype=np.float32))
-            feat_f = feats_dict.get("face", np.zeros(512, dtype=np.float32))
+    try:
+        feat_a = feats_dict.get("audio", np.zeros(39, dtype=np.float32))
+        feat_t = feats_dict.get("text", np.zeros(768, dtype=np.float32))
+        feat_f = feats_dict.get("face", np.zeros(512, dtype=np.float32))
+        
+        joint_feat = np.concatenate([feat_a, feat_t, feat_f]).astype(np.float32).reshape(1, 1319)
+        
+        logits = early_fusion_session.run(None, {"input": joint_feat})[0]
+        probs = softmax(logits)[0]
             
-            joint_feat = np.concatenate([feat_a, feat_t, feat_f]).astype(np.float32)
-            x_fuse = torch.tensor(joint_feat).unsqueeze(0).to(DEVICE)
+        fusion_results["early_fusion"] = {labels[i]: float(probs[i]) for i in range(7)}
+    except Exception as e:
+        print(f"Error serving Early Fusion: {e}")
             
-            with torch.no_grad():
-                logits = early_fusion_model(x_fuse)
-                probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-                
-            fusion_results["early_fusion"] = {labels[i]: float(probs[i]) for i in range(7)}
-        except Exception as e:
-            print(f"Error serving Early Fusion: {e}")
-            
-    # Clean up temporary audio files to prevent memory leak / disk bloat
+    # Clean up temporary audio files
     for path in temp_files:
         if os.path.exists(path):
             try:
@@ -526,7 +466,6 @@ def analyze_multimodal_emotion(text_input, audio_input_path, video_input_path):
 # GRADIO INTERFACE LAYOUT
 # ============================================================
 
-# Dark premium CSS styling
 custom_css = """
 body {
     background-color: #0b0f19;
@@ -609,7 +548,6 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="indigo", secondary_hue="slat
                 
             chart_plot = gr.Plot(label="Modality Confidence Comparison")
             
-    # Connect submit click to inference handler
     submit_btn.click(
         fn=analyze_multimodal_emotion,
         inputs=[text_input, audio_input, video_input],
