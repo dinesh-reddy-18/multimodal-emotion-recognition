@@ -166,9 +166,10 @@ def preprocess_video(video_path: str):
         success, img = cap.read()
         if success:
             cropped = detect_and_crop_face(img)
-            if cropped is not None:
-                chw = preprocess_face_numpy(cropped)
-                frame_tensors.append(chw)
+            if cropped is None:
+                cropped = img
+            chw = preprocess_face_numpy(cropped)
+            frame_tensors.append(chw)
                 
     cap.release()
     

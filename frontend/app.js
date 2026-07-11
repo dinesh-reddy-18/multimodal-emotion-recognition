@@ -88,40 +88,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         let hasInput = false;
 
-        if (activeTab === 'video') {
-            if (videoInput.files.length > 0) {
-                formData.append('video', videoInput.files[0]);
-                hasInput = true;
-            } else if (recordedVideoFile) {
-                formData.append('video', recordedVideoFile);
-                hasInput = true;
-            } else {
-                alert("Please select a video file or record using live webcam first.");
-                return;
-            }
-        } else if (activeTab === 'audio') {
-            if (audioInput.files.length > 0) {
-                formData.append('audio', audioInput.files[0]);
-                hasInput = true;
-            } else if (recordedAudioFile) {
-                formData.append('audio', recordedAudioFile);
-                hasInput = true;
-            } else {
-                alert("Please select an audio file or record using microphone first.");
-                return;
-            }
-        } else if (activeTab === 'text') {
-            const val = textInput.value.trim();
-            if (val) {
-                formData.append('text', val);
-                hasInput = true;
-            } else {
-                alert("Please type a statement first.");
-                return;
-            }
+        // 1. Gather Video Input
+        if (videoInput.files.length > 0) {
+            formData.append('video', videoInput.files[0]);
+            hasInput = true;
+        } else if (recordedVideoFile) {
+            formData.append('video', recordedVideoFile);
+            hasInput = true;
         }
 
-        if (!hasInput) return;
+        // 2. Gather Audio Input
+        if (audioInput.files.length > 0) {
+            formData.append('audio', audioInput.files[0]);
+            hasInput = true;
+        } else if (recordedAudioFile) {
+            formData.append('audio', recordedAudioFile);
+            hasInput = true;
+        }
+
+        // 3. Gather Text Input
+        const val = textInput.value.trim();
+        if (val) {
+            formData.append('text', val);
+            hasInput = true;
+        }
+
+        if (!hasInput) {
+            alert("Please provide at least one input modal: type text, upload/record audio, or upload/record video first.");
+            return;
+        }
 
         // Reset Loader steps
         loader.style.display = 'flex';
