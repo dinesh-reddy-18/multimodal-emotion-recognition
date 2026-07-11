@@ -61,6 +61,22 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.add('active');
             activeTab = btn.getAttribute('data-tab');
             document.getElementById(`tab-${activeTab}`).style.display = 'block';
+            
+            // Clear all inputs on tab switch to prevent crossover
+            videoInput.value = "";
+            recordedVideoFile = null;
+            videoName.textContent = "No file chosen";
+            videoUpload.querySelector('.upload-instructions').textContent = "Drag and drop your RAVDESS MP4 clip here, or click to browse";
+            
+            audioInput.value = "";
+            recordedAudioFile = null;
+            audioName.textContent = "No file chosen";
+            audioUpload.querySelector('.upload-instructions').textContent = "Drag and drop a speech WAV file here, or click to browse";
+            
+            textInput.value = "";
+            
+            // Reset webcam stream if active
+            stopWebcamStream();
         });
     });
 
@@ -88,35 +104,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         let hasInput = false;
 
-        // 1. Gather Video Input
-        if (videoInput.files.length > 0) {
-            formData.append('video', videoInput.files[0]);
-            hasInput = true;
-        } else if (recordedVideoFile) {
-            formData.append('video', recordedVideoFile);
-            hasInput = true;
+        if (activeTab === 'video') {
+            if (videoInput.files.length > 0) {
+                formData.append('video', videoInput.files[0]);
+                hasInput = true;
+            } else if (recordedVideoFile) {
+                formData.append('video', recordedVideoFile);
+                hasInput = true;
+            } else {
+                alert("Please select a video file or record using live webcam first.");
+                return;
+            }
+        } else if (activeTab === 'audio') {
+            if (audioInput.files.length > 0) {
+                formData.append('audio', audioInput.files[0]);
+                hasInput = true;
+            } else if (recordedAudioFile) {
+                formData.append('audio', recordedAudioFile);
+                hasInput = true;
+            } else {
+                alert("Please select an audio file or record using microphone first.");
+                return;
+            }
+        } else if (activeTab === 'text') {
+            const val = textInput.value.trim();
+            if (val) {
+                formData.append('text', val);
+                hasInput = true;
+            } else {
+                alert("Please type a statement first.");
+                return;
+            }
         }
 
-        // 2. Gather Audio Input
-        if (audioInput.files.length > 0) {
-            formData.append('audio', audioInput.files[0]);
-            hasInput = true;
-        } else if (recordedAudioFile) {
-            formData.append('audio', recordedAudioFile);
-            hasInput = true;
-        }
-
-        // 3. Gather Text Input
-        const val = textInput.value.trim();
-        if (val) {
-            formData.append('text', val);
-            hasInput = true;
-        }
-
-        if (!hasInput) {
-            alert("Please provide at least one input modal: type text, upload/record audio, or upload/record video first.");
-            return;
-        }
+        if (!hasInput) return;
 
         // Reset Loader steps
         loader.style.display = 'flex';
