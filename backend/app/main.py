@@ -55,12 +55,18 @@ text_std = text_stats["std"].item()
 late_weights_data = np.load("onnx_models/late_fusion_weights.npz", allow_pickle=True)
 late_fusion_weights = late_weights_data["weights"]
 
+# Configure ONNX runtime options to prevent thread-deadlocking in resource-constrained environments (like Render)
+sess_options = ort.SessionOptions()
+sess_options.intra_op_num_threads = 1
+sess_options.inter_op_num_threads = 1
+sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+
 # Load ONNX sessions on CPU
 print("Loading ONNX sessions for FastAPI backend...")
-audio_session = ort.InferenceSession("onnx_models/audio_model.onnx", providers=["CPUExecutionProvider"])
-face_session = ort.InferenceSession("onnx_models/face_pipeline.onnx", providers=["CPUExecutionProvider"])
-early_fusion_session = ort.InferenceSession("onnx_models/early_fusion.onnx", providers=["CPUExecutionProvider"])
-text_session = ort.InferenceSession("onnx_models/text_pipeline.onnx", providers=["CPUExecutionProvider"])
+audio_session = ort.InferenceSession("onnx_models/audio_model.onnx", sess_options=sess_options, providers=["CPUExecutionProvider"])
+face_session = ort.InferenceSession("onnx_models/face_pipeline.onnx", sess_options=sess_options, providers=["CPUExecutionProvider"])
+early_fusion_session = ort.InferenceSession("onnx_models/early_fusion.onnx", sess_options=sess_options, providers=["CPUExecutionProvider"])
+text_session = ort.InferenceSession("onnx_models/text_pipeline.onnx", sess_options=sess_options, providers=["CPUExecutionProvider"])
 print("ONNX sessions loaded successfully.")
 
 # Load Tokenizer locally
