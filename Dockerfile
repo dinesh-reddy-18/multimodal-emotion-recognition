@@ -43,5 +43,5 @@ COPY --from=builder /build/onnx_models/text_pipeline.onnx.data /code/onnx_models
 # Expose port 7860 (Hugging Face / Render default)
 EXPOSE 7860
 
-# Run FastAPI using uvicorn on port 7860
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Run FastAPI using uvicorn on the environment port (default to 10000)
+CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
