@@ -90,7 +90,10 @@ def ensure_wav(input_path: str) -> str:
     
     # Convert non-wav audio format to wav using moviepy
     temp_wav = input_path + "_converted.wav"
-    from moviepy.editor import AudioFileClip
+    try:
+        from moviepy.editor import AudioFileClip
+    except ImportError:
+        from moviepy import AudioFileClip
     clip = AudioFileClip(input_path)
     clip.write_audiofile(temp_wav, fps=22050, nbytes=2, codec='pcm_s16le', logger=None)
     clip.close()
@@ -328,7 +331,10 @@ async def predict_emotion(
             # B. Extract Audio track from video if not already processed a separate audio
             if "audio" not in probs_dict:
                 try:
-                    from moviepy.editor import VideoFileClip
+                    try:
+                        from moviepy.editor import VideoFileClip
+                    except ImportError:
+                        from moviepy import VideoFileClip
                     extracted_wav = str(temp_dir / "temp_video_audio.wav")
                     clip = VideoFileClip(str(temp_video_file))
                     if clip.audio is not None:
