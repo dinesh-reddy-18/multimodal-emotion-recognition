@@ -1,3 +1,22 @@
+# ==========================================
+# STAGE 1: Model Compilation Builder
+# ==========================================
+FROM python:3.10-slim AS builder
+
+WORKDIR /build
+
+# Install PyTorch and transformers for ONNX compilation
+RUN pip install --no-cache-dir torch transformers
+
+# Copy compilation script
+COPY scratch/export_text_onnx.py /build/scratch/export_text_onnx.py
+
+# Run the compilation script to generate text_pipeline.onnx & data
+RUN python /build/scratch/export_text_onnx.py
+
+# ==========================================
+# STAGE 2: Production Final Runner Image
+# ==========================================
 FROM python:3.10-slim
 
 WORKDIR /code
@@ -9,17 +28,18 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install
+# Copy requirements and install (requirements.txt does NOT contain torch!)
 COPY requirements.txt /code/requirements.txt
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
 # Copy all project files
 COPY . /code
 
-# Compile the pre-trained text model to ONNX format locally
-RUN python scratch/export_text_onnx.py
+# Copy the compiled text ONNX models from the builder stage
+COPY --from=builder /build/onnx_models/text_pipeline.onnx /code/onnx_models/text_pipeline.onnx
+COPY --from=builder /build/onnx_models/text_pipeline.onnx.data /code/onnx_models/text_pipeline.onnx.data
 
-# Expose port 7860 (Hugging Face default)
+# Expose port 7860 (Hugging Face / Render default)
 EXPOSE 7860
 
 # Run FastAPI using uvicorn on port 7860
