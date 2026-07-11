@@ -16,6 +16,9 @@ RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 # Copy all project files
 COPY . /code
 
+# Compile the pre-trained text model to ONNX format locally
+RUN python scratch/export_text_onnx.py
+
 # Expose port 7860 (Hugging Face default)
 EXPOSE 7860
 

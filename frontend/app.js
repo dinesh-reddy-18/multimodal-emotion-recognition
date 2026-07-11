@@ -10,7 +10,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const audioName = document.getElementById('audio-name');
     const textInput = document.getElementById('text-input-field');
     const btnPredict = document.getElementById('btn-predict');
+    
+    // Loader Elements
     const loader = document.getElementById('loader');
+    const stepUpload = document.getElementById('step-upload');
+    const stepDetect = document.getElementById('step-detect');
+    const stepExtract = document.getElementById('step-extract');
+    const stepFuse = document.getElementById('step-fuse');
     
     const apiStatusDot = document.getElementById('api-status-dot');
     const apiStatusText = document.getElementById('api-status-text');
@@ -20,18 +26,23 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const fusedEmotionLabel = document.getElementById('fused-emotion-label');
     const fusedConfidence = document.getElementById('fused-confidence');
+    const fusedProgressBar = document.getElementById('fused-progress-bar');
     
+    // Modality Cards & Bars
     const cardAudio = document.getElementById('card-audio-summary');
     const audioLabel = document.getElementById('audio-prediction-label');
     const audioConf = document.getElementById('audio-prediction-conf');
+    const barAudio = document.getElementById('bar-audio');
     
     const cardFace = document.getElementById('card-face-summary');
     const faceLabel = document.getElementById('face-prediction-label');
     const faceConf = document.getElementById('face-prediction-conf');
+    const barFace = document.getElementById('bar-face');
     
     const cardText = document.getElementById('card-text-summary');
     const textLabel = document.getElementById('text-prediction-label');
     const textConf = document.getElementById('text-prediction-conf');
+    const barText = document.getElementById('bar-text');
     
     let chartInstance = null;
     let activeTab = 'video';
@@ -112,10 +123,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!hasInput) return;
 
-        // Toggle Loading State
+        // Reset Loader steps
         loader.style.display = 'flex';
         resultsIdle.style.display = 'flex';
         resultsActive.style.display = 'none';
+        
+        stepUpload.className = "step-item active";
+        stepDetect.className = "step-item";
+        stepExtract.className = "step-item";
+        stepFuse.className = "step-item";
+        
+        // Progressive loading steps simulation
+        const step1Timer = setTimeout(() => {
+            stepUpload.className = "step-item done";
+            stepDetect.className = "step-item active";
+        }, 600);
+        
+        const step2Timer = setTimeout(() => {
+            stepDetect.className = "step-item done";
+            stepExtract.className = "step-item active";
+        }, 1200);
+
+        const step3Timer = setTimeout(() => {
+            stepExtract.className = "step-item done";
+            stepFuse.className = "step-item active";
+        }, 2200);
 
         try {
             const response = await fetch('/api/predict', {
@@ -129,11 +161,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
-            displayPredictions(data);
+            
+            // Mark all steps as complete
+            clearTimeout(step1Timer);
+            clearTimeout(step2Timer);
+            clearTimeout(step3Timer);
+            
+            stepUpload.className = "step-item done";
+            stepDetect.className = "step-item done";
+            stepExtract.className = "step-item done";
+            stepFuse.className = "step-item done";
+            
+            setTimeout(() => {
+                displayPredictions(data);
+                loader.style.display = 'none';
+            }, 300);
         } catch (error) {
-            alert(`Analysis failed: ${error.message}`);
-        } finally {
+            clearTimeout(step1Timer);
+            clearTimeout(step2Timer);
+            clearTimeout(step3Timer);
             loader.style.display = 'none';
+            alert(`Analysis failed: ${error.message}`);
         }
     });
 
@@ -142,7 +190,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/models/status');
             if (res.ok) {
-                const info = await res.ok ? await res.json() : {};
                 apiStatusDot.className = 'indicator-dot green';
                 apiStatusText.textContent = 'Models Online';
             } else {
@@ -164,7 +211,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Fused banner
         const fused = data.final_prediction;
         fusedEmotionLabel.textContent = capitalizeFirstLetter(fused.label);
-        fusedConfidence.textContent = `${(fused.confidence * 100).toFixed(1)}%`;
+        const fusedPct = (fused.confidence * 100).toFixed(1);
+        fusedConfidence.textContent = `${fusedPct}%`;
+        fusedProgressBar.style.width = `${fusedPct}%`;
 
         // 2. Modality Cards logic
         const mods = data.modalities;
@@ -173,33 +222,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mods.audio) {
             cardAudio.classList.remove('inactive');
             audioLabel.textContent = capitalizeFirstLetter(mods.audio.label);
-            audioConf.textContent = `Confidence: ${(mods.audio.confidence * 100).toFixed(1)}%`;
+            const audPct = (mods.audio.confidence * 100).toFixed(1);
+            audioConf.textContent = `Confidence: ${audPct}%`;
+            barAudio.style.width = `${audPct}%`;
         } else {
             cardAudio.classList.add('inactive');
             audioLabel.textContent = "Unavailable";
             audioConf.textContent = "Confidence: N/A";
+            barAudio.style.width = "0%";
         }
 
         // Face / Video
         if (mods.face_video) {
             cardFace.classList.remove('inactive');
             faceLabel.textContent = capitalizeFirstLetter(mods.face_video.label);
-            faceConf.textContent = `Confidence: ${(mods.face_video.confidence * 100).toFixed(1)}%`;
+            const facePct = (mods.face_video.confidence * 100).toFixed(1);
+            faceConf.textContent = `Confidence: ${facePct}%`;
+            barFace.style.width = `${facePct}%`;
         } else {
             cardFace.classList.add('inactive');
             faceLabel.textContent = "Unavailable";
             faceConf.textContent = "Confidence: N/A";
+            barFace.style.width = "0%";
         }
 
         // Text
         if (mods.text) {
             cardText.classList.remove('inactive');
             textLabel.textContent = capitalizeFirstLetter(mods.text.label);
-            textConf.textContent = `Confidence: ${(mods.text.confidence * 100).toFixed(1)}%`;
+            const txtPct = (mods.text.confidence * 100).toFixed(1);
+            textConf.textContent = `Confidence: ${txtPct}%`;
+            barText.style.width = `${txtPct}%`;
         } else {
             cardText.classList.add('inactive');
             textLabel.textContent = "Unavailable";
             textConf.textContent = "Confidence: N/A";
+            barText.style.width = "0%";
         }
 
         // 3. Render Chart
@@ -208,8 +266,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderChart(data) {
         const labels = ['Angry', 'Disgust', 'Fearful', 'Happy', 'Neutral', 'Sad', 'Surprised'];
-        
-        // Collect active chart datasets
         const datasets = [];
         const mods = data.modalities;
         
@@ -217,9 +273,10 @@ document.addEventListener('DOMContentLoaded', () => {
             datasets.push({
                 label: 'Audio Modality',
                 data: mods.audio.probs,
-                backgroundColor: 'rgba(99, 102, 241, 0.45)',
+                backgroundColor: 'rgba(99, 102, 241, 0.25)',
                 borderColor: 'rgba(99, 102, 241, 1)',
-                borderWidth: 1.5
+                borderWidth: 1.5,
+                borderRadius: 4
             });
         }
         
@@ -227,9 +284,10 @@ document.addEventListener('DOMContentLoaded', () => {
             datasets.push({
                 label: 'Facial Expression',
                 data: mods.face_video.probs,
-                backgroundColor: 'rgba(236, 72, 153, 0.45)',
+                backgroundColor: 'rgba(236, 72, 153, 0.25)',
                 borderColor: 'rgba(236, 72, 153, 1)',
-                borderWidth: 1.5
+                borderWidth: 1.5,
+                borderRadius: 4
             });
         }
         
@@ -237,28 +295,27 @@ document.addEventListener('DOMContentLoaded', () => {
             datasets.push({
                 label: 'Text Context',
                 data: mods.text.probs,
-                backgroundColor: 'rgba(234, 179, 8, 0.45)',
+                backgroundColor: 'rgba(234, 179, 8, 0.25)',
                 borderColor: 'rgba(234, 179, 8, 1)',
-                borderWidth: 1.5
+                borderWidth: 1.5,
+                borderRadius: 4
             });
         }
         
-        // Add Fused dataset prediction if present
         const fuse_active = data.fusion.late_fusion || data.fusion.early_fusion;
         if (fuse_active) {
             datasets.push({
                 label: 'Fused Prediction',
                 data: fuse_active.probs,
-                backgroundColor: 'rgba(139, 92, 246, 0.8)',
-                borderColor: 'rgba(139, 92, 246, 1)',
+                backgroundColor: 'rgba(168, 85, 247, 0.7)',
+                borderColor: 'rgba(168, 85, 247, 1)',
                 borderWidth: 2,
-                borderRadius: 4
+                borderRadius: 6
             });
         }
 
         const ctx = document.getElementById('probsChart').getContext('2d');
         
-        // Destroy old Chart instance to prevent rendering conflicts
         if (chartInstance) {
             chartInstance.destroy();
         }
@@ -271,27 +328,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 maintainAspectRatio: false,
                 scales: {
                     x: {
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: { color: '#9ca3af', font: { family: 'Inter', size: 11 } }
+                        grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                        ticks: { color: '#9ca3af', font: { family: 'Inter', size: 10 } }
                     },
                     y: {
                         min: 0,
                         max: 1.0,
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: { color: '#9ca3af', font: { family: 'Inter', size: 11 } }
+                        grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                        ticks: { color: '#9ca3af', font: { family: 'Inter', size: 10 } }
                     }
                 },
                 plugins: {
                     legend: {
-                        labels: { color: '#f3f4f6', font: { family: 'Inter', weight: 'medium' } }
+                        labels: { color: '#f3f4f6', font: { family: 'Inter', weight: 'medium', size: 10 } }
                     },
                     tooltip: {
-                        backgroundColor: '#141623',
+                        backgroundColor: '#0b0f19',
                         titleFont: { family: 'Outfit', weight: 'bold' },
                         bodyFont: { family: 'Inter' },
                         padding: 10,
                         borderWidth: 1,
-                        borderColor: 'rgba(255, 255, 255, 0.08)'
+                        borderColor: 'rgba(255, 255, 255, 0.06)'
                     }
                 }
             }
@@ -314,18 +371,30 @@ document.addEventListener('DOMContentLoaded', () => {
     let webcamStream = null;
     let videoRecorder = null;
     let videoChunks = [];
+    let isRecordingVideo = false;
+    let videoTimerInterval = null;
 
-    // Live Webcam toggle
+    let micStream = null;
+    let audioRecorder = null;
+    let audioChunks = [];
+    let isRecordingAudio = false;
+    let audioTimerInterval = null;
+
+    // Live Webcam toggle (Video only, facing user)
     btnToggleWebcam.addEventListener('click', async () => {
         if (webcamBox.style.display === 'none') {
             try {
-                webcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                // Request video only to prevent audio device conflicts
+                webcamStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user" },
+                    audio: false
+                });
                 webcamElement.srcObject = webcamStream;
                 webcamBox.style.display = 'block';
-                btnToggleWebcam.innerHTML = '<i class="fa-solid fa-camera-slash"></i> Disable Webcam';
-                videoRecordingStatus.textContent = "Webcam active. Ready to record.";
+                btnToggleWebcam.innerHTML = '<i class="fa-solid fa-camera-slash"></i> Disable Camera';
+                videoRecordingStatus.textContent = "Camera active. Ready to record.";
             } catch (err) {
-                alert(`Webcam access failed: ${err.message}`);
+                alert(`Webcam access failed: ${err.message}. Please verify camera permissions.`);
             }
         } else {
             stopWebcamStream();
@@ -339,39 +408,55 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         webcamElement.srcObject = null;
         webcamBox.style.display = 'none';
-        btnToggleWebcam.innerHTML = '<i class="fa-solid fa-camera"></i> Use Live Webcam';
+        btnToggleWebcam.innerHTML = '<i class="fa-solid fa-camera"></i> Live Camera Feed';
         videoRecordingStatus.textContent = "";
+        
+        if (videoTimerInterval) {
+            clearInterval(videoTimerInterval);
+            videoTimerInterval = null;
+        }
+        isRecordingVideo = false;
+        btnRecordVideo.innerHTML = '<i class="fa-solid fa-circle"></i> Start Recording';
     }
 
-    // Live Webcam Recording
-    let videoTimerInterval = null;
-    let isRecordingVideo = false;
-
+    // Live Webcam Recording using standard HTML5 MediaRecorder (fully responsive & un-frozen)
     btnRecordVideo.addEventListener('click', () => {
         if (!isRecordingVideo) {
             if (!webcamStream) {
-                alert("Please enable the webcam first.");
+                alert("Please enable the camera feed first.");
                 return;
             }
             isRecordingVideo = true;
             videoChunks = [];
             
+            // Standard mimeType check for cross-browser support
+            let options = {};
+            if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+                options = { mimeType: 'video/webm;codecs=vp9' };
+            } else if (MediaRecorder.isTypeSupported('video/webm')) {
+                options = { mimeType: 'video/webm' };
+            } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+                options = { mimeType: 'video/mp4' }; // Safari fallback
+            }
+
             try {
-                videoRecorder = new MediaRecorder(webcamStream);
+                videoRecorder = new MediaRecorder(webcamStream, options);
             } catch (e) {
-                videoRecorder = new MediaRecorder(webcamStream); // default fallback
+                videoRecorder = new MediaRecorder(webcamStream);
             }
 
             videoRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
+                if (e.data && e.data.size > 0) {
                     videoChunks.push(e.data);
                 }
             };
 
             videoRecorder.onstop = () => {
-                const blob = new Blob(videoChunks, { type: 'video/webm' });
-                recordedVideoFile = new File([blob], "webcam_recording.webm", { type: 'video/webm' });
-                videoRecordingStatus.textContent = "Recording complete! Ready for analysis.";
+                const mimeType = videoRecorder.mimeType || 'video/webm';
+                const blob = new Blob(videoChunks, { type: mimeType });
+                const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+                recordedVideoFile = new File([blob], `webcam_recording.${ext}`, { type: mimeType });
+                videoRecordingStatus.textContent = "Recording saved successfully. Ready for inference.";
                 btnRecordVideo.innerHTML = '<i class="fa-solid fa-circle"></i> Start Recording';
                 isRecordingVideo = false;
             };
@@ -380,15 +465,15 @@ document.addEventListener('DOMContentLoaded', () => {
             btnRecordVideo.innerHTML = '<i class="fa-solid fa-stop"></i> Stop Recording';
 
             let elapsed = 0;
-            videoRecordingStatus.textContent = `Recording live feed... 00:00`;
+            videoRecordingStatus.textContent = `Recording: 00:00`;
             videoTimerInterval = setInterval(() => {
                 elapsed++;
                 const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
                 const secs = String(elapsed % 60).padStart(2, '0');
-                videoRecordingStatus.textContent = `Recording live feed... ${mins}:${secs}`;
+                videoRecordingStatus.textContent = `Recording: ${mins}:${secs}`;
             }, 1000);
         } else {
-            // Stop video recording
+            // Stop recording
             if (videoRecorder && videoRecorder.state === "recording") {
                 videoRecorder.stop();
             }
@@ -399,128 +484,78 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Live Microphone WAV Recording
-    let micStream = null;
-    let audioContext = null;
-    let audioProcessor = null;
-    let leftChannel = [];
-    let recordingLength = 0;
-    let sampleRate = 44100;
-    let audioTimerInterval = null;
-    let isRecordingAudio = false;
-
+    // Modern Cross-Browser Microphone Voice Recording using HTML5 MediaRecorder (safely handles webm/mp4 inputs)
     btnRecordMic.addEventListener('click', async () => {
         if (!isRecordingAudio) {
             isRecordingAudio = true;
-            leftChannel = [];
-            recordingLength = 0;
-            btnRecordMic.innerHTML = '<i class="fa-solid fa-stop"></i> Stop Recording';
-            audioRecordingStatus.textContent = "Recording voice... 00:00";
-
+            audioChunks = [];
+            
             try {
                 micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                sampleRate = audioContext.sampleRate;
                 
-                const source = audioContext.createMediaStreamSource(micStream);
-                audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-                
-                audioProcessor.onaudioprocess = function(e) {
-                    const left = e.inputBuffer.getChannelData(0);
-                    leftChannel.push(new Float32Array(left));
-                    recordingLength += 4096;
+                let options = {};
+                if (MediaRecorder.isTypeSupported('audio/webm')) {
+                    options = { mimeType: 'audio/webm' };
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    options = { mimeType: 'audio/mp4' }; // Safari fallback
+                }
+
+                try {
+                    audioRecorder = new MediaRecorder(micStream, options);
+                } catch (e) {
+                    audioRecorder = new MediaRecorder(micStream);
+                }
+
+                audioRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) {
+                        audioChunks.push(e.data);
+                    }
                 };
-                
-                source.connect(audioProcessor);
-                audioProcessor.connect(audioContext.destination);
+
+                audioRecorder.onstop = () => {
+                    const mimeType = audioRecorder.mimeType || 'audio/webm';
+                    const blob = new Blob(audioChunks, { type: mimeType });
+                    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+                    recordedAudioFile = new File([blob], `mic_recording.${ext}`, { type: mimeType });
+                    audioRecordingStatus.textContent = "Voice clip saved. Ready for inference.";
+                    btnRecordMic.innerHTML = '<i class="fa-solid fa-microphone"></i> Live Voice Record';
+                    isRecordingAudio = false;
+                };
+
+                audioRecorder.start();
+                btnRecordMic.innerHTML = '<i class="fa-solid fa-stop"></i> Stop Recording';
+                audioRecordingStatus.textContent = "Recording voice: 00:00";
 
                 let elapsed = 0;
                 audioTimerInterval = setInterval(() => {
                     elapsed++;
                     const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
                     const secs = String(elapsed % 60).padStart(2, '0');
-                    audioRecordingStatus.textContent = `Recording voice... ${mins}:${secs}`;
+                    audioRecordingStatus.textContent = `Recording voice: ${mins}:${secs}`;
                 }, 1000);
 
             } catch (err) {
-                alert(`Microphone access failed: ${err.message}`);
-                btnRecordMic.innerHTML = '<i class="fa-solid fa-microphone"></i> Record Speech';
+                alert(`Microphone access failed: ${err.message}. Please check permissions.`);
+                btnRecordMic.innerHTML = '<i class="fa-solid fa-microphone"></i> Live Voice Record';
                 audioRecordingStatus.textContent = "";
                 isRecordingAudio = false;
             }
         } else {
+            // Stop recording
             isRecordingAudio = false;
             if (audioTimerInterval) {
                 clearInterval(audioTimerInterval);
                 audioTimerInterval = null;
             }
-            
-            if (audioProcessor) {
-                audioProcessor.disconnect();
-                if (micStream) {
-                    micStream.getTracks().forEach(track => track.stop());
-                }
+            if (audioRecorder && audioRecorder.state === "recording") {
+                audioRecorder.stop();
             }
-            
-            // Process buffer and save as WAV file
-            const leftBuffer = flattenArray(leftChannel, recordingLength);
-            const wavBuffer = writeWavFile(leftBuffer);
-            const blob = new Blob([wavBuffer], { type: 'audio/wav' });
-            
-            recordedAudioFile = new File([blob], "mic_recording.wav", { type: 'audio/wav' });
-            
-            audioRecordingStatus.textContent = "Recording complete! Ready for analysis.";
-            btnRecordMic.innerHTML = '<i class="fa-solid fa-microphone"></i> Record Speech';
+            if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
+            }
         }
     });
-
-    function flattenArray(channelBuffer, recordingLength) {
-        const result = new Float32Array(recordingLength);
-        let offset = 0;
-        for (let i = 0; i < channelBuffer.length; i++) {
-            const buffer = channelBuffer[i];
-            result.set(buffer, offset);
-            offset += buffer.length;
-        }
-        return result;
-    }
-
-    function writeWavFile(buffer) {
-        const bufferLength = buffer.length;
-        const arrayBuffer = new ArrayBuffer(44 + bufferLength * 2);
-        const view = new DataView(arrayBuffer);
-        
-        writeString(view, 0, 'RIFF');
-        view.setUint32(4, 36 + bufferLength * 2, true);
-        writeString(view, 8, 'WAVE');
-        writeString(view, 12, 'fmt ');
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, 1, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * 2, true);
-        view.setUint16(32, 2, true);
-        view.setUint16(34, 16, true);
-        writeString(view, 36, 'data');
-        view.setUint32(40, bufferLength * 2, true);
-        
-        let index = 44;
-        for (let i = 0; i < bufferLength; i++) {
-            let sample = buffer[i];
-            if (sample > 1) sample = 1;
-            else if (sample < -1) sample = -1;
-            view.setInt16(index, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
-            index += 2;
-        }
-        
-        return arrayBuffer;
-    }
-
-    function writeString(view, offset, string) {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
-    }
 
     function capitalizeFirstLetter(string) {
         if (!string) return '';

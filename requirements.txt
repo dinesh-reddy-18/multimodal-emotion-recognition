@@ -1,4 +1,6 @@
-gradio
+fastapi
+uvicorn
+python-multipart
 numpy
 opencv-python-headless
 mediapipe
@@ -11,3 +13,4 @@ requests
 jinja2
 markupsafe
 transformers
+gradio

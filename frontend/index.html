@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multimodal Emotion Recognition Showcase</title>
+    <title>Multimodal Emotion AI Platform</title>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js -->
@@ -15,20 +15,64 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Radial Background Glows -->
     <div class="background-radial"></div>
+    <div class="glow-orb glow-orb-1"></div>
+    <div class="glow-orb glow-orb-2"></div>
     
     <div class="app-container">
-        <!-- Sidebar / Navigation Header -->
-        <header>
+        <!-- Modern Premium Navbar -->
+        <header class="navbar-header">
             <div class="logo">
                 <i class="fa-solid fa-brain-circuit brain-icon"></i>
-                <h1>Multimodal <span>Emotion AI</span></h1>
+                <h1>EmotiFuse <span>AI</span></h1>
             </div>
-            <div class="status-indicator">
-                <span class="indicator-dot red" id="api-status-dot"></span>
-                <span class="status-text" id="api-status-text">Server Offline</span>
+            <div class="nav-right">
+                <div class="status-indicator">
+                    <span class="indicator-dot red" id="api-status-dot"></span>
+                    <span class="status-text" id="api-status-text">Server Offline</span>
+                </div>
             </div>
         </header>
+
+        <!-- Gorgeous Hero Landing Section -->
+        <section class="hero-section">
+            <div class="hero-badge"><i class="fa-solid fa-sparkles"></i> Next-Gen Emotion Intelligence</div>
+            <h1>Cognitive Multimodal <span>Emotion Recognition</span></h1>
+            <p>Analyze human affective states in real-time by fusing verbal cues, acoustic features, and visual facial micro-expressions using state-of-the-art Deep Learning models.</p>
+        </section>
+
+        <!-- Core Commercial Feature Cards Section -->
+        <section class="features-grid">
+            <div class="feature-card">
+                <div class="feat-icon-wrapper feat-purple">
+                    <i class="fa-solid fa-font"></i>
+                </div>
+                <h3>Text Semantics</h3>
+                <p>DistilRoBERTa token classification evaluates word sentiments and contextual intent.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feat-icon-wrapper feat-indigo">
+                    <i class="fa-solid fa-microphone"></i>
+                </div>
+                <h3>Acoustic Cues</h3>
+                <p>39-dim MFCC extractors capture vocal tone, speech energy, and pitch pitch-frequency shifts.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feat-icon-wrapper feat-pink">
+                    <i class="fa-solid fa-circle-user"></i>
+                </div>
+                <h3>Facial Kinetics</h3>
+                <p>MediaPipe BlazeFace maps real-time micro-expressions across pooled frame sequences.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feat-icon-wrapper feat-green">
+                    <i class="fa-solid fa-arrows-split-up-and-left"></i>
+                </div>
+                <h3>Decision Fusion</h3>
+                <p>Calculates Late Weighted Averaging and Early Feature Concatenation Joint MLPs.</p>
+            </div>
+        </section>
 
         <!-- Main Dashboard Layout -->
         <main class="dashboard">
@@ -36,7 +80,7 @@
             <section class="panel-card inputs-panel-section">
                 <div class="card-header">
                     <i class="fa-solid fa-sliders header-icon"></i>
-                    <h2>Analysis Modality Inputs</h2>
+                    <h2>Analysis Modalities</h2>
                 </div>
                 
                 <!-- Tab Switching Navigation -->
@@ -46,6 +90,7 @@
                     <button class="tab-btn" data-tab="text"><i class="fa-solid fa-font"></i> Text</button>
                 </div>
 
+                <!-- Video Input Content -->
                 <div class="tab-content active" id="tab-video">
                     <div class="upload-container" id="video-upload-area">
                         <i class="fa-solid fa-file-video upload-icon"></i>
@@ -58,23 +103,28 @@
                     <div class="live-capture-container">
                         <div class="divider"><span>OR</span></div>
                         <button class="btn btn-secondary btn-block" id="btn-toggle-webcam" type="button">
-                            <i class="fa-solid fa-camera"></i> Use Live Webcam
+                            <i class="fa-solid fa-camera"></i> Live Camera Feed
                         </button>
-                        <div class="webcam-preview-box" id="webcam-box" style="display: none; margin-top: 1rem; text-align: center;">
-                            <video id="webcam-element" autoplay playsinline muted style="width: 100%; max-width: 320px; border-radius: 12px; border: 1px solid var(--border-color); background: #000;"></video>
-                            <div class="webcam-controls" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; justify-content: center;">
-                                <button class="btn btn-danger" id="btn-record-video" type="button"><i class="fa-solid fa-circle"></i> Start Recording</button>
+                        <div class="webcam-preview-box" id="webcam-box" style="display: none;">
+                            <div class="webcam-stream-wrapper">
+                                <video id="webcam-element" autoplay playsinline muted></video>
                             </div>
-                            <span class="recording-status" id="video-recording-status" style="display: block; font-size: 0.85rem; margin-top: 0.5rem; color: var(--accent-green); font-weight: 500;"></span>
+                            <div class="webcam-controls">
+                                <button class="btn btn-danger" id="btn-record-video" type="button">
+                                    <i class="fa-solid fa-circle"></i> Start Recording
+                                </button>
+                            </div>
+                            <span class="recording-status" id="video-recording-status"></span>
                         </div>
                     </div>
                 </div>
 
+                <!-- Audio Input Content -->
                 <div class="tab-content" id="tab-audio" style="display: none;">
                     <div class="upload-container" id="audio-upload-area">
                         <i class="fa-solid fa-file-audio upload-icon"></i>
                         <p class="upload-instructions">Drag and drop a speech WAV file here, or click to browse</p>
-                        <input type="file" id="audio-file-input" accept="audio/wav" style="display: none;">
+                        <input type="file" id="audio-file-input" accept="audio/wav,audio/webm,audio/mp4,audio/ogg" style="display: none;">
                         <span class="file-name-display" id="audio-name">No file chosen</span>
                     </div>
 
@@ -82,27 +132,35 @@
                     <div class="live-capture-container">
                         <div class="divider"><span>OR</span></div>
                         <button class="btn btn-secondary btn-block" id="btn-record-mic" type="button">
-                            <i class="fa-solid fa-microphone"></i> Record Speech
+                            <i class="fa-solid fa-microphone"></i> Live Voice Record
                         </button>
-                        <span class="recording-status" id="audio-recording-status" style="display: block; font-size: 0.85rem; text-align: center; margin-top: 0.5rem; color: var(--accent-green); font-weight: 500;"></span>
+                        <span class="recording-status" id="audio-recording-status"></span>
                     </div>
                 </div>
 
+                <!-- Text Input Content -->
                 <div class="tab-content" id="tab-text" style="display: none;">
                     <div class="text-input-container">
                         <label for="text-input-field">Enter Statement Text:</label>
-                        <textarea id="text-input-field" placeholder="Type emotion sentence here... (e.g. 'Kids are talking by the door' or 'Dogs are sitting by the door')" rows="4"></textarea>
+                        <textarea id="text-input-field" placeholder="Type emotion sentence here... (e.g. 'I was walking home alone when I noticed the same car moving slowly behind me...')" rows="4"></textarea>
                     </div>
                 </div>
 
                 <!-- Action Button -->
                 <button class="btn btn-primary btn-block" id="btn-predict">
-                    <i class="fa-solid fa-chart-line"></i> Predict Modalities & Fusion
+                    <i class="fa-solid fa-chart-line"></i> Run Deep Learning Inference
                 </button>
 
+                <!-- Premium Analysis Progress Loader overlay -->
                 <div class="loader-overlay" id="loader" style="display: none;">
                     <div class="spinner"></div>
                     <p id="loader-text">Analyzing signals...</p>
+                    <div class="loader-steps">
+                        <div class="step-item active" id="step-upload"><i class="fa-solid fa-check"></i> Uploading content</div>
+                        <div class="step-item" id="step-detect"><i class="fa-solid fa-circle-notch fa-spin"></i> Aligning modalities</div>
+                        <div class="step-item" id="step-extract"><i class="fa-solid fa-circle-notch fa-spin"></i> Running local ONNX models</div>
+                        <div class="step-item" id="step-fuse"><i class="fa-solid fa-circle-notch fa-spin"></i> Calculating decision fusion</div>
+                    </div>
                 </div>
             </section>
 
@@ -110,9 +168,9 @@
             <section class="panel-card results-panel-section">
                 <!-- Idle State Message -->
                 <div class="results-idle" id="results-idle-state">
-                    <i class="fa-solid fa-cube floating-cube"></i>
-                    <h3>Awaiting Inputs</h3>
-                    <p>Select inputs on the left panel, and click predict to run the unimodal and fusion emotion networks</p>
+                    <i class="fa-solid fa-cubes floating-cube"></i>
+                    <h3>Awaiting Emotion Inputs</h3>
+                    <p>Provide inputs on the left tab panel (Video, Audio, or Text Context) and click inference to calculate unified results.</p>
                 </div>
 
                 <!-- Active Fused Results -->
@@ -124,49 +182,75 @@
 
                     <!-- Fused Callout -->
                     <div class="fused-result-banner">
-                        <div class="banner-badge">FUSED PREDICTION</div>
+                        <div class="banner-badge"><i class="fa-solid fa-wand-magic-sparkles"></i> FUSED DECISION (LATE FUSION)</div>
                         <div class="banner-body">
                             <h2 id="fused-emotion-label">Happy</h2>
                             <p>Confidence: <span id="fused-confidence">84.5%</span></p>
                         </div>
+                        <div class="fused-progress-container">
+                            <div class="fused-progress-bar" id="fused-progress-bar" style="width: 84.5%"></div>
+                        </div>
                     </div>
 
-                    <!-- Breakdown Modality Grid -->
+                    <!-- Breakdown Modality Grid with Progress Bars -->
                     <div class="modality-grid">
                         <div class="modality-card card-audio" id="card-audio-summary">
                             <div class="mod-header">
                                 <span><i class="fa-solid fa-microphone"></i> Audio Modality</span>
                             </div>
-                            <h4 id="audio-prediction-label">Sad</h4>
-                            <small id="audio-prediction-conf">Confidence: 61.2%</small>
+                            <div class="mod-result">
+                                <h4 id="audio-prediction-label">Sad</h4>
+                                <small id="audio-prediction-conf">Confidence: 61.2%</small>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill progress-audio" id="bar-audio" style="width: 61.2%"></div>
+                            </div>
                         </div>
 
                         <div class="modality-card card-face" id="card-face-summary">
                             <div class="mod-header">
-                                <span><i class="fa-solid fa-circle-user"></i> Facial Expression</span>
+                                <span><i class="fa-solid fa-circle-user"></i> Face Expression</span>
                             </div>
-                            <h4 id="face-prediction-label">Happy</h4>
-                            <small id="face-prediction-conf">Confidence: 91.5%</small>
+                            <div class="mod-result">
+                                <h4 id="face-prediction-label">Happy</h4>
+                                <small id="face-prediction-conf">Confidence: 91.5%</small>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill progress-face" id="bar-face" style="width: 91.5%"></div>
+                            </div>
                         </div>
 
                         <div class="modality-card card-text" id="card-text-summary">
                             <div class="mod-header">
                                 <span><i class="fa-solid fa-font"></i> Text Content</span>
                             </div>
-                            <h4 id="text-prediction-label">Neutral</h4>
-                            <small id="text-prediction-conf">Confidence: 15.0%</small>
+                            <div class="mod-result">
+                                <h4 id="text-prediction-label">Neutral</h4>
+                                <small id="text-prediction-conf">Confidence: 15.0%</small>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill progress-text" id="bar-text" style="width: 15.0%"></div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Chart Visualizer -->
                     <div class="chart-container">
-                        <h3>Probability Distributions</h3>
-                        <canvas id="probsChart"></canvas>
+                        <h3>Probability Distribution Chart</h3>
+                        <div class="chart-canvas-wrapper">
+                            <canvas id="probsChart"></canvas>
+                        </div>
                     </div>
                 </div>
             </section>
         </main>
+
+        <!-- Modern Footer -->
+        <footer class="app-footer">
+            <p>&copy; 2026 EmotiFuse AI Platform. Built with FastAPI, ONNX Runtime, and MediaPipe.</p>
+        </footer>
     </div>
+    
     <script src="app.js"></script>
 </body>
 </html>
