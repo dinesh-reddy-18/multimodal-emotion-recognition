@@ -5,8 +5,8 @@ FROM python:3.10-slim AS builder
 
 WORKDIR /build
 
-# Install PyTorch and transformers for ONNX compilation
-RUN pip install --no-cache-dir torch transformers
+# Install PyTorch, transformers, onnxscript, and onnx for ONNX compilation
+RUN pip install --no-cache-dir torch transformers onnxscript onnx
 
 # Copy compilation script
 COPY scratch/export_text_onnx.py /build/scratch/export_text_onnx.py
