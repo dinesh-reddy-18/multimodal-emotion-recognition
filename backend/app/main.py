@@ -11,9 +11,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import onnxruntime as ort
-import mediapipe as mp
-from mediapipe.tasks import python as mp_python
-from mediapipe.tasks.python import vision as mp_vision
+
 from transformers import AutoTokenizer
 
 warnings.filterwarnings("ignore")
@@ -74,16 +72,24 @@ print("Loading tokenizer for FastAPI backend...")
 tokenizer = AutoTokenizer.from_pretrained("j-hartmann/emotion-english-distilroberta-base")
 print("Tokenizer loaded successfully.")
 
-# MediaPipe BlazeFace Detector
-detector = None
+# OpenCV Haar Cascade Face Detector
+face_cascade = None
 try:
-    model_path = "models/face/blaze_face_short_range.tflite"
-    base_options = mp_python.BaseOptions(model_asset_path=model_path)
-    options = mp_vision.FaceDetectorOptions(base_options=base_options)
-    detector = mp_vision.FaceDetector.create_from_options(options)
-    print("MediaPipe Face Detector initialized.")
+    os.makedirs("models", exist_ok=True)
+    xml_path = "models/haarcascade_frontalface_default.xml"
+    if not os.path.exists(xml_path):
+        print("Downloading OpenCV Haar Cascade XML file...")
+        import urllib.request
+        url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+        urllib.request.urlretrieve(url, xml_path)
+        print("Haar Cascade XML downloaded successfully.")
+    
+    face_cascade = cv2.CascadeClassifier(xml_path)
+    if face_cascade.empty():
+        raise ValueError("Loaded classifier is empty.")
+    print("OpenCV Haar Cascade Face Detector initialized successfully.")
 except Exception as e:
-    print(f"Error loading MediaPipe detector: {e}")
+    print(f"Error loading OpenCV Haar Cascade detector: {e}")
 
 # ============================================================
 # PREPROCESSING HELPERS
@@ -134,33 +140,37 @@ def preprocess_audio(wav_path: str) -> np.ndarray:
     return full_feature
 
 def detect_and_crop_face(image_bgr):
-    """Detect crop of the primary face using MediaPipe detector."""
-    if detector is None:
+    """Detect and crop the primary face using OpenCV Haar Cascade Classifier."""
+    if face_cascade is None:
         return None
-    h, w, _ = image_bgr.shape
-    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
-    
-    detection_result = detector.detect(mp_image)
-    if not detection_result.detections:
-        return None
+    try:
+        gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
         
-    bbox = detection_result.detections[0].bounding_box
-    x, y = bbox.origin_x, bbox.origin_y
-    box_w, box_h = bbox.width, bbox.height
-    
-    margin_x = int(box_w * 0.2)
-    margin_y = int(box_h * 0.2)
-    
-    x1 = max(0, x - margin_x)
-    y1 = max(0, y - margin_y)
-    x2 = min(w, x + box_w + margin_x)
-    y2 = min(h, y + box_h + margin_y)
-    
-    face_crop = image_bgr[y1:y2, x1:x2]
-    if face_crop.size == 0:
+        if len(faces) == 0:
+            return None
+            
+        # Get the largest face box detected
+        faces = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)
+        x, y, w_box, h_box = faces[0]
+        
+        # Crop with 15% margin around the detected box
+        h, w, _ = image_bgr.shape
+        margin_x = int(w_box * 0.15)
+        margin_y = int(h_box * 0.15)
+        
+        x1 = max(0, x - margin_x)
+        y1 = max(0, y - margin_y)
+        x2 = min(w, x + w_box + margin_x)
+        y2 = min(h, y + h_box + margin_y)
+        
+        face_crop = image_bgr[y1:y2, x1:x2]
+        if face_crop.size == 0:
+            return None
+        return face_crop
+    except Exception as e:
+        print(f"Error in OpenCV face detection/crop: {e}")
         return None
-    return face_crop
 
 def preprocess_face_numpy(face_bgr):
     """Resize, transpose, and normalize crop for ResNet18."""

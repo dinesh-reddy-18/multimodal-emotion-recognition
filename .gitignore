@@ -79,3 +79,6 @@ data/interim/audio_wav/
 # Large local text ONNX model files
 onnx_models/text_pipeline.onnx
 onnx_models/text_pipeline.onnx.data
+
+# Dynamic Haar Cascade downloads
+models/haarcascade_frontalface_default.xml

@@ -3,7 +3,6 @@ uvicorn
 python-multipart
 numpy
 opencv-python-headless
-mediapipe
 pandas
 matplotlib
 onnxruntime
