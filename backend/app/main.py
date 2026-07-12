@@ -89,21 +89,35 @@ except Exception as e:
 # PREPROCESSING HELPERS
 # ============================================================
 
+def convert_to_wav_ffmpeg(input_path: str, output_path: str) -> bool:
+    """Convert any audio or video file to standard 22050Hz mono 16-bit WAV using lightweight ffmpeg CLI."""
+    import subprocess
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-vn",
+        "-ar", "22050",
+        "-ac", "1",
+        "-codec:a", "pcm_s16le",
+        output_path
+    ]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        return res.returncode == 0
+    except Exception as e:
+        print(f"FFmpeg conversion failed: {e}")
+        return False
+
 def ensure_wav(input_path: str) -> str:
-    """Ensure the audio file is in standard WAV format. Converts webm/mp4 if needed using moviepy."""
+    """Ensure the audio file is in standard WAV format using lightweight ffmpeg CLI."""
     if input_path.lower().endswith(".wav"):
         return input_path
     
-    # Convert non-wav audio format to wav using moviepy
     temp_wav = input_path + "_converted.wav"
-    try:
-        from moviepy.editor import AudioFileClip
-    except ImportError:
-        from moviepy import AudioFileClip
-    clip = AudioFileClip(input_path)
-    clip.write_audiofile(temp_wav, fps=22050, nbytes=2, codec='pcm_s16le', logger=None)
-    clip.close()
-    return temp_wav
+    success = convert_to_wav_ffmpeg(input_path, temp_wav)
+    if success:
+        return temp_wav
+    return input_path
 
 def preprocess_audio(wav_path: str) -> np.ndarray:
     """Compute static 39-dim MFCC values."""
@@ -321,7 +335,7 @@ async def predict_emotion(
                 norm_face_feat = (pooled_face_feat - mean_vals) / std_vals
                 
                 # Aggregate probabilities temporally
-                all_probs = [softmax(l)[0] for l in logits_out]
+                all_probs = [softmax(l) for l in logits_out]
                 face_probs = np.mean(all_probs, axis=0)
                 
                 probs_dict["face"] = face_probs.tolist()
@@ -337,15 +351,9 @@ async def predict_emotion(
             # B. Extract Audio track from video if not already processed a separate audio
             if "audio" not in probs_dict:
                 try:
-                    try:
-                        from moviepy.editor import VideoFileClip
-                    except ImportError:
-                        from moviepy import VideoFileClip
                     extracted_wav = str(temp_dir / "temp_video_audio.wav")
-                    clip = VideoFileClip(str(temp_video_file))
-                    if clip.audio is not None:
-                        clip.audio.write_audiofile(extracted_wav, fps=22050, logger=None)
-                        clip.close()
+                    success = convert_to_wav_ffmpeg(str(temp_video_file), extracted_wav)
+                    if success and os.path.exists(extracted_wav):
                         temp_files.append(Path(extracted_wav))
                         
                         raw_audio_feat = preprocess_audio(extracted_wav)
@@ -364,8 +372,6 @@ async def predict_emotion(
                             "confidence": float(probs.max()),
                             "probs": probs.tolist()
                         }
-                    else:
-                        clip.close()
                 except Exception as e:
                     print(f"Error extracting audio from video: {e}")
         except Exception as e:
